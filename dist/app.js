@@ -8,13 +8,13 @@ const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTime=0;
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, frame=0, idleReturn=0;
-const attachments=[],eyes=[], nodes=[];
+const attachments=[],eyes=[], nodes=[],pickable=[];
 const HAT_OFFSET=new THREE.Vector3(-.32,-.16,0);
 const MAX=6;
 const orbit={yaw:0,pitch:0,vx:0,vy:0};
 const wobble={value:new THREE.Vector3(),velocity:new THREE.Vector3()};
 let pivot,pendingBrush=null,dirtyBody=false,physicsSteps=0;
-const localCamera=new THREE.Vector3(), hairWind=new THREE.Vector3();
+const localCamera=new THREE.Vector3(), hairWind=new THREE.Vector3(),furNormalMatrix=new THREE.Matrix3();
 const coarse=matchMedia('(pointer: coarse)').matches;
 const nodeVelocities=[];
 
@@ -46,7 +46,8 @@ renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
 scene.add(new THREE.HemisphereLight(0xf7d5ec,0x35213f,2.1));
 const key=new THREE.DirectionalLight(0xffd5e4,3.3);key.position.set(-4,6,6);scene.add(key);
-const rim=new THREE.DirectionalLight(0x86cfff,2.3);rim.position.set(4,4,-2);scene.add(rim);
+const cyanBack=new THREE.PointLight(0x08eaff,38,14,2);cyanBack.position.set(-2.4,1.8,-2.2);scene.add(cyanBack);
+const pinkBack=new THREE.PointLight(0xff087f,38,14,2);pinkBack.position.set(2.4,1.8,-2.2);scene.add(pinkBack);
 const fill=new THREE.DirectionalLight(0xff83bc,.9);fill.position.set(-4,1,0);scene.add(fill);
 
 // Soft contact shadow; the character and all visible fibers are live geometry.
@@ -77,7 +78,7 @@ new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
     else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.eyeFeel={value:eyeFeel};shader.uniforms.eyeCenter={value:center};shader.uniforms.eyePupil={value:o.name.includes('Pupil')?1:0};shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec4 eyeFeel;uniform vec3 eyeCenter;uniform float eyePupil;uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nif(eyePupil>0.5){transformed.x=eyeCenter.x+(transformed.x-eyeCenter.x)*(1.0+eyeFeel.x*.55)+eyeFeel.z*.085;transformed.y=eyeCenter.y+(transformed.y-eyeCenter.y)*(1.0+eyeFeel.x*.38)+eyeFeel.w*.055;}else{transformed.y+=eyeFeel.x*.17;}vec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-expressive-eyes';eyes.push(o);}
   });
   if(!body)throw new Error('Body missing from character asset');
-  makeFur();loaded=true;loading.classList.add('hidden');resize();
+  pickable.push(body,...attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');resize();
 },undefined,error=>{console.error(error);fail('Gizmo could not load. Please refresh to try again.');});
 
 function makeFur(){
@@ -100,11 +101,18 @@ function makeFur(){
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
   furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
   furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET}},vertexShader:`
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},cyanBackPosition:{value:cyanBack.position},pinkBackPosition:{value:pinkBack.position}},vertexShader:`
     attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
     uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;uniform vec3 hatOffset;
+    uniform mat3 furNormalMatrix;uniform vec3 cyanBackPosition;uniform vec3 pinkBackPosition;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
+    float backlight(vec3 lightPosition,vec3 worldP,vec3 N,vec3 V,float edge){
+      vec3 D=lightPosition-worldP;vec3 L=normalize(D);
+      float transmission=pow(max(dot(-L,V),0.0),4.0);
+      float wrap=max((dot(N,L)+.35)/1.35,0.0);
+      return edge*(.8*transmission+.35*wrap)/(1.0+.06*dot(D,D));
+    }
     void main(){
       float t=position.y;vT=t;vec3 n=hairNormal;
       vec3 tangent=normalize(cross(n,abs(n.y)<.9?vec3(0,1,0):vec3(1,0,0)));
@@ -126,12 +134,19 @@ function makeFur(){
       vec3 viewDir=normalize(localCamera-root);
       vec3 side=normalize(cross(n+groom*7.0,viewDir)+vec3(.0001));
       p+=side*position.x*(.0043+seed*.0018)*(1.0-t*.96);
-      vec3 litNormal=normalize(mat3(modelMatrix)*n);float light=max(dot(litNormal,normalize(vec3(-.5,.8,1.0))),0.0);
-      float rim=max(dot(litNormal,normalize(vec3(.8,.6,-.3))),0.0);
+      vec3 displacedP=displace(p);vec3 worldP=(modelMatrix*vec4(displacedP,1.0)).xyz;
+      vec3 litNormal=normalize(furNormalMatrix*n);float light=max(dot(litNormal,normalize(vec3(-.5,.8,1.0))),0.0);
       vec3 pink=mix(vec3(.36,.005,.09),vec3(.98,.10,.40),.38+light*.62);
-      pink+=vec3(.07,.09,.17)*rim;
       vColor=pink*(.67+seed*.37)*(.66+t*.46);
-      gl_Position=projectionMatrix*modelViewMatrix*vec4(displace(p),1.0);
+      vec3 V=normalize(cameraPosition-worldP);float edge=pow(1.0-abs(dot(litNormal,V)),3.0);
+      float tips=mix(.18,1.0,smoothstep(.05,.85,t))*(.8+seed*.3);
+      float cyanRim=backlight(cyanBackPosition,worldP,litNormal,V,edge)*tips;
+      float pinkRim=backlight(pinkBackPosition,worldP,litNormal,V,edge)*tips;
+      float rimSum=cyanRim+pinkRim;
+      vec3 rimColor=vec3(.005,.90,1.2)*cyanRim+vec3(1.4,.005,.28)*pinkRim;
+      // Let the transmitted light color dominate thin fibers instead of bleaching pink to white.
+      vColor=mix(vColor,rimColor/max(rimSum,.001),clamp(rimSum*4.5,0.0,.96))+rimColor*.65;
+      gl_Position=projectionMatrix*modelViewMatrix*vec4(displacedP,1.0);
     }`,fragmentShader:`varying vec3 vColor;varying float vT;void main(){gl_FragColor=vec4(vColor,1.0);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(';#include',';\n#include')});
   fur=new THREE.Mesh(furGeo,mat);fur.frustumCulled=false;rig.add(fur);
 }
@@ -144,14 +159,18 @@ function reset(){endGesture();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;wobble.v
 document.querySelector('#reset').addEventListener('click',reset);
 
 function ray(e){const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(pointer,camera);cursor.style.left=(e.clientX-r.left)+'px';cursor.style.top=(e.clientY-r.top)+'px';}
-function contact(e){if(!loaded)return null;ray(e);scene.updateMatrixWorld(true);const hits=raycaster.intersectObject(body,false);if(!hits.length)return null;const hit=hits[0];const local=body.worldToLocal(hit.point.clone());const face=hit.face;const p=body.geometry.attributes.position;
+function pick(e){if(!loaded)return null;ray(e);scene.updateMatrixWorld(true);return raycaster.intersectObjects(pickable,false)[0]||null;}
+function hover(e){const hit=pick(e),hat=!!hit&&hit.object!==body;stage.classList.toggle('hat-hover',hat&&e.pointerType!=='touch');cursor.style.opacity=hit&&!hat&&e.pointerType!=='touch'&&tool!=='turn'?'1':'0';}
+function contact(e,hit=pick(e)){if(!hit||hit.object!==body)return null;const local=body.worldToLocal(hit.point.clone());const face=hit.face;const p=body.geometry.attributes.position;
   const a=new THREE.Vector3().fromBufferAttribute(p,face.a),b=new THREE.Vector3().fromBufferAttribute(p,face.b),c=new THREE.Vector3().fromBufferAttribute(p,face.c);
   const bc=new THREE.Vector3();THREE.Triangle.getBarycoord(local,a,b,c,bc);const rest=new THREE.Vector3();for(const [vi,w] of [[face.a,bc.x],[face.b,bc.y],[face.c,bc.z]])rest.addScaledVector(new THREE.Vector3().fromArray(base,vi*3),w);
   return {point:rest,world:hit.point,normal:hit.face.normal.clone()};}
 function newNode(point,radius){let index=nextNode++%MAX;const n=nodes[index];n.center.copy(point);n.radius=radius;uRadius[index]=radius;n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);return n;}
 function startGesture(e){
-  if(active||!loaded||e.button>2)return;
-  const hit=contact(e),turning=tool==='turn'||!hit||e.button===2;
+  if(active||!loaded||e.button!==0)return;
+  const picked=pick(e),turning=tool==='turn'||(picked&&picked.object!==body);
+  if(!turning&&!picked)return;
+  const hit=turning?null:contact(e,picked);
   e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);gestureCount++;orbit.vx=orbit.vy=0;
   if(turning){active={id:e.pointerId,tool:'turn',x:e.clientX,y:e.clientY,eventTime:e.timeStamp};stage.classList.add('turn','contact');setMood('Every side is my good side.');return;}
   const n=tool==='brush'?null:newNode(hit.point,tool==='pull'?1.03:.86);
@@ -163,7 +182,7 @@ function startGesture(e){
 }
 function moveGesture(e){
   if(!loaded)return;ray(e);
-  if(!active){const hit=raycaster.intersectObject(body,false)[0];cursor.style.opacity=hit&&e.pointerType!=='touch'&&tool!=='turn'?'1':'0';return;}
+  if(!active){hover(e);return;}
   if(e.pointerId!==active.id)return;e.preventDefault();
   if(active.tool==='turn'){
     const dx=e.clientX-active.x,dy=e.clientY-active.y,dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
@@ -190,15 +209,15 @@ function endGesture(e){
   if(e&&active&&e.pointerId!==undefined&&e.pointerId!==active.id)return;
   if(active){const gesture=active,id=gesture.id;active=null;
     if(gesture.node){gesture.node.target.set(0,0,0);if(gesture.tool==='pull'&&e?.type==='pointerup'&&time-gesture.startTime>.05){if(e.timeStamp-gesture.eventTime<120)gesture.node.velocity.addScaledVector(gesture.dragVelocity,.45).clampLength(0,12);wobble.velocity.z+=THREE.MathUtils.clamp(-gesture.node.value.x*.6,-1.3,1.3);wobble.velocity.x+=gesture.node.value.z*.4;}}
-    if(gesture.tool==='turn'&&(e?.type!=='pointerup'||e.timeStamp-gesture.eventTime>100||calm))orbit.vx=orbit.vy=0;
     if(pendingBrush&&gesture.tool==='brush'){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);responseTarget=0;idleReturn=time+3.5;
     setMood(gesture.tool==='turn'?'Admire away.':gesture.tool==='brush'?'Impeccably groomed. Mostly.':gesture.tool==='poke'?(reaction.pokes>=3?'I’m counting those.':'You startled me.'):'Back to his usual self.');
   }
-  stage.classList.remove('contact');stage.classList.toggle('turn',tool==='turn');
+  orbit.vx=orbit.vy=0;stage.classList.remove('contact');stage.classList.toggle('turn',tool==='turn');
+  if(e?.type==='pointerup')hover(e);else if(!e||e.type==='pointercancel'){stage.classList.remove('hat-hover');cursor.style.opacity='0';}
 }
 
-canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('pointermove',moveGesture);canvas.addEventListener('pointerup',endGesture);canvas.addEventListener('pointercancel',endGesture);canvas.addEventListener('lostpointercapture',endGesture);canvas.addEventListener('pointerleave',()=>{if(!active)cursor.style.opacity='0';});window.addEventListener('blur',()=>endGesture());document.addEventListener('visibilitychange',()=>{if(document.hidden)endGesture();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
+canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('pointermove',moveGesture);canvas.addEventListener('pointerup',endGesture);canvas.addEventListener('pointercancel',endGesture);canvas.addEventListener('lostpointercapture',endGesture);canvas.addEventListener('pointerleave',()=>{stage.classList.remove('hat-hover');if(!active)cursor.style.opacity='0';});window.addEventListener('blur',()=>endGesture());document.addEventListener('visibilitychange',()=>{if(document.hidden)endGesture();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
 window.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const values={'1':'poke','2':'pull','3':'brush','4':'turn'};if(values[e.key])setTool(values[e.key]);if(e.key.toLowerCase()==='r')reset();if(document.activeElement!==canvas||!loaded)return;if(e.key===' '){e.preventDefault();react('poke',new THREE.Vector3(0,1.6,1.25));setMood(reaction.pokes>=3?'I’m counting those.':'Hey! I was napping.');const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-7.5;responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;}if(e.key.startsWith('Arrow')){e.preventDefault();const d=new THREE.Vector3(e.key==='ArrowLeft'?-.5:e.key==='ArrowRight'?.5:0,e.key==='ArrowUp'?.5:e.key==='ArrowDown'?-.5:0,0);if(tool==='turn'){orbit.yaw+=d.x*.65;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+d.y*.35,-.6,.6);}else if(tool==='brush'){react('brush',new THREE.Vector3(0,1.6,1.3));groom(new THREE.Vector3(0,1.6,1.3),d);brushJoy=1;}else{react(tool,new THREE.Vector3(0,1.6,1.2));const n=newNode(new THREE.Vector3(0,1.6,1.2),.8);n.velocity.copy(d).multiplyScalar(9);gestureCount++;}}});
 
 function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;time+=dt;frame++;
@@ -224,11 +243,11 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     for(const eye of eyes){const dict=eye.morphTargetDictionary,values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=expression.surprise;values[dict.Smug]=expression.pleased*.95*(1-expression.surprise);values[dict.Blink]=expression.blink;values[dict.Skeptical]=expression.annoyance*(1-expression.surprise*.6);}
     if(pendingBrush){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     for(let s=0;s<steps;s++){wobble.velocity.addScaledVector(wobble.value,-65*h).multiplyScalar(Math.exp(-5.8*h));wobble.value.addScaledVector(wobble.velocity,h).clampLength(0,.2);}
-    if(active?.tool!=='turn'){orbit.yaw+=orbit.vx*dt;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+orbit.vy*dt,-.6,.6);orbit.vx*=Math.exp(-5*dt);orbit.vy*=Math.exp(-6*dt);}
-    pivot.rotation.set(orbit.pitch+wobble.value.x,orbit.yaw+(calm?0:Math.sin(time*.55)*.025),wobble.value.z+(calm?0:Math.sin(time*.7)*.004));
+    // Orientation changes only during an explicit Turn/hat drag or Turn keyboard action.
+    pivot.rotation.set(orbit.pitch,orbit.yaw,0);
     let tension=0;for(const n of nodes)tension+=n.value.length();
     rig.scale.set(1+Math.min(tension,.9)*.025,1-Math.min(tension,.9)*.045+(calm?0:Math.sin(time*1.8)*.004),1+Math.min(tension,.9)*.015);
-    rig.updateWorldMatrix(true,false);localCamera.copy(camera.position);rig.worldToLocal(localCamera);
+    rig.updateWorldMatrix(true,true);localCamera.copy(camera.position);rig.worldToLocal(localCamera);furNormalMatrix.getNormalMatrix(fur.matrixWorld);
     hairWind.set(-orbit.vx*.012,orbit.vy*.01,-wobble.velocity.x*.025);
     if(!active&&time>idleReturn&&brushJoy<.1&&mood.textContent!=='Perfectly unbothered.')setMood('Perfectly unbothered.');
   }
@@ -237,7 +256,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,active:!!active,gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,tool,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, or Turn in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:['poke','pull','brush','turn']}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!['poke','pull','brush','turn'].includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
