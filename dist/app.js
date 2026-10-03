@@ -9,6 +9,7 @@ let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTi
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, frame=0, idleReturn=0;
 const attachments=[],eyes=[], nodes=[];
+const HAT_OFFSET=new THREE.Vector3(-.24,-.22,0);
 const MAX=6;
 const orbit={yaw:0,pitch:0,vx:0,vy:0};
 const wobble={value:new THREE.Vector3(),velocity:new THREE.Vector3()};
@@ -72,7 +73,7 @@ new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
   rig=gltf.scene;pivot=new THREE.Group();pivot.position.y=1.8;pivot.rotation.order='YXZ';scene.add(pivot);pivot.add(rig);rig.position.y=-1.8;rig.name='Gizmo';
   rig.traverse(o=>{if(!o.isMesh)return;o.frustumCulled=false;
     if(o.name==='Body'){body=o;bodyGeometry=o.geometry;base=new Float32Array(o.geometry.attributes.position.array);o.material=new THREE.MeshStandardMaterial({color:0xe82c85,roughness:1,bumpMap:noiseTexture,bumpScale:.035});}
-    else if(o.name.startsWith('Hat')){o.material=new THREE.MeshStandardMaterial({color:o.name==='HatBand'?0x171322:0x10101b,roughness:o.name==='HatBand'?.63:.94,bumpMap:noiseTexture,bumpScale:.025});attachments.push({mesh:o,anchor:new THREE.Vector3(-1,3.37,0),original:o.position.clone()});}
+    else if(o.name.startsWith('Hat')){o.position.add(HAT_OFFSET);o.material=new THREE.MeshStandardMaterial({color:o.name==='HatBand'?0x171322:0x10101b,roughness:o.name==='HatBand'?.63:.94,bumpMap:noiseTexture,bumpScale:.025});attachments.push({mesh:o,anchor:new THREE.Vector3(-1,3.37,0).add(HAT_OFFSET),original:o.position.clone()});}
     else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.eyeFeel={value:eyeFeel};shader.uniforms.eyeCenter={value:center};shader.uniforms.eyePupil={value:o.name.includes('Pupil')?1:0};shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec4 eyeFeel;uniform vec3 eyeCenter;uniform float eyePupil;uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nif(eyePupil>0.5){transformed.x=eyeCenter.x+(transformed.x-eyeCenter.x)*(1.0+eyeFeel.x*.55)+eyeFeel.z*.085;transformed.y=eyeCenter.y+(transformed.y-eyeCenter.y)*(1.0+eyeFeel.x*.38)+eyeFeel.w*.055;}else{transformed.y+=eyeFeel.x*.17;}vec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-expressive-eyes';eyes.push(o);}
   });
   if(!body)throw new Error('Body missing from character asset');
@@ -99,9 +100,9 @@ function makeFur(){
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
   furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
   furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel}},vertexShader:`
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET}},vertexShader:`
     attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
-    uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;
+    uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;uniform vec3 hatOffset;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
     void main(){
@@ -114,7 +115,7 @@ function makeFur(){
       float lid=length(vec2(max(abs(abs(root.x)-.736)-mix(.402,.18,eyeFeel.x),0.0),root.y-browY))-mix(.145,.17,eyeFeel.x);
       float pupil=(length(vec2(dx/(.165*(1.0+eyeFeel.x*.77)),(root.y-2.265-eyeFeel.w*.055)/(.245*(1.0+eyeFeel.x*.85))))-1.0)*.165;
       float trim=root.z>1.0?mix(.02,1.0,smoothstep(-.015,.115,min(lid,pupil)-.03)):1.0;
-      float underHat=(1.0-smoothstep(.84,1.12,length(vec2((root.x+.995)/1.35,(root.z-.04)/1.03))))*smoothstep(2.72,2.98,root.y);
+      float underHat=(1.0-smoothstep(.84,1.12,length(vec2((root.x-hatOffset.x+.995)/1.35,(root.z-hatOffset.z-.04)/1.03))))*smoothstep(2.72+hatOffset.y,2.98+hatOffset.y,root.y);
       trim*=mix(1.0,.05,underHat);
       curl*=trim;float len=mix(.09+seed*.105,.24+(seed-.75)*.30,step(.75,seed))*trim;float laid=clamp(length(groom)*3.5,0.0,.72);
       vec3 inertia=hairWind;
