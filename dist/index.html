@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#090e20"><meta name="description" content="A little hands-on time with Gizmo. Poke, stretch, and brush your fuzzy pink companion.">
+<title>Gizmo · Touch Studio</title>
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='9' fill='%23090e20'/%3E%3Cpath d='M16 10C6 0 0 15 10 16C0 26 15 32 16 22C26 32 32 17 22 16C32 6 17 0 16 10' fill='%23fc4b9f'/%3E%3C/svg%3E">
+<link rel="stylesheet" href="./style.css">
+<script type="importmap">{"imports":{"three":"./vendor/three.module.min.js"}}</script>
+</head>
+<body>
+<main id="studio">
+  <header class="masthead"><div class="brand"><h1>Gizmo</h1><div class="eyebrow">TOUCH STUDIO <i></i> 001</div></div><button class="reset" id="reset" title="Reset Gizmo (R)" aria-label="Reset shape and fur"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg><span>Reset</span></button></header>
+  <section class="stage" aria-label="Interactive Gizmo playground">
+    <canvas id="canvas" tabindex="0" aria-label="Gizmo. Use the tools below, then touch him. Keyboard: Space to poke; arrow keys to pull or brush; R to reset."></canvas>
+    <div id="loading" role="status"><span class="loading-mark"></span><p>Waking up Gizmo…</p></div>
+    <div class="mood" id="mood" aria-live="polite">Perfectly unbothered.</div>
+    <div id="cursor" aria-hidden="true"><i></i></div>
+  </section>
+  <footer class="controls">
+    <div class="tool-intro"><span class="tool-line"></span><p id="instruction">Press into the fluff. Let go for a little bounce.</p><span class="tool-line"></span></div>
+    <div class="control-row"><div class="tools" role="group" aria-label="Interaction tool">
+      <button class="tool active" data-tool="poke" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21h8l3-8a2 2 0 0 0-3-2l-2 1V5a2 2 0 0 0-4 0v8l-2-2c-2-2-4 0-2 2l2 3z"/><path d="M5 5H3m5-3L7 1m10 2 1-2"/></svg><span>Poke</span><kbd>1</kbd></button>
+      <button class="tool" data-tool="pull" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l5 5m6 6 5 5M4 9V4h5m6 15h5v-5M9 9c3-2 8 3 6 6s-8-3-6-6z"/></svg><span>Pull</span><kbd>2</kbd></button>
+      <button class="tool" data-tool="brush" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 3 6 6-9 9-6-6zM5 14l5 5m-7-3 5 5m-6-2 3 3"/></svg><span>Brush</span><kbd>3</kbd></button>
+    </div></div>
+    <div class="bottom-notes"><span id="gesture-note">TOUCH • HOLD • RELEASE</span><span class="keyboard-note">1 / 2 / 3 switch tools &nbsp; · &nbsp; R reset</span><button id="motion" aria-pressed="false" title="Reduce idle movement">Calm mode</button></div>
+  </footer>
+</main>
+<script type="module" src="./app.js"></script>
+</body></html>
