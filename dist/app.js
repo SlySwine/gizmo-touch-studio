@@ -9,7 +9,7 @@ let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTi
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, frame=0, idleReturn=0;
 const attachments=[],eyes=[], nodes=[];
-const HAT_OFFSET=new THREE.Vector3(-.24,-.22,0);
+const HAT_OFFSET=new THREE.Vector3(-.32,-.16,0);
 const MAX=6;
 const orbit={yaw:0,pitch:0,vx:0,vy:0};
 const wobble={value:new THREE.Vector3(),velocity:new THREE.Vector3()};
