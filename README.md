@@ -8,6 +8,14 @@ python3 -m http.server 8764 --directory dist
 
 Open http://localhost:8764. Select Poke, Pull, Brush, or Turn; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Reset clears deformation, grooming, and orientation. Keyboard: 1/2/3/4 selects a tool, R resets; focus the canvas and use Space to poke or arrows to pull/brush/turn. System reduced-motion preference suppresses idle breathing.
 
+## GitHub deployment
+
+This repository is the source for Gizmo’s GitHub Pages deployment. Pushes to `main` validate the JavaScript, linked assets and GLB model, then publish the `dist/` directory. Pull requests run validation without publishing. The Actions workflow uses GitHub’s short-lived deployment identity; no personal token or additional deployment secret belongs in this repository.
+
+Run `node scripts/validate-site.mjs` before pushing. To republish the current commit, run the **Validate and deploy Gizmo** workflow manually. To roll back, revert the unwanted commit on `main`; that new commit deploys automatically.
+
+The original ChatGPT Site remains a separate publication and does not receive these GitHub pushes. Make future changes in this GitHub repository. The imported Git history preserves all seven prior Site versions.
+
 ## Model fidelity
 
 `dist/assets/gizmo.glb` is an optimized export of the actual revised Astra Blender scene, frame 1, with the approved lower/viewer-left bowler and all four native eye expression morphs. The body has 10,001 vertices and 19,998 triangles. The complete 652 KB GLB has 16,126 vertices and 31,912 triangles. No source Blender scene or render output was modified.
