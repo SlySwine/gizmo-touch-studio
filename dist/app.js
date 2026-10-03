@@ -44,11 +44,11 @@ catch(e){fail('Gizmo needs WebGL to play. Try a browser with hardware accelerati
 renderer.setPixelRatio(Math.min(devicePixelRatio,coarse?1.5:2));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
-scene.add(new THREE.HemisphereLight(0xf7d5ec,0x35213f,2.1));
-const key=new THREE.DirectionalLight(0xffd5e4,3.3);key.position.set(-4,6,6);scene.add(key);
-const cyanBack=new THREE.PointLight(0x08eaff,38,14,2);cyanBack.position.set(-2.4,1.8,-2.2);scene.add(cyanBack);
-const pinkBack=new THREE.PointLight(0xff087f,38,14,2);pinkBack.position.set(2.4,1.8,-2.2);scene.add(pinkBack);
-const fill=new THREE.DirectionalLight(0xff83bc,.9);fill.position.set(-4,1,0);scene.add(fill);
+scene.add(new THREE.HemisphereLight(0xf7d5ec,0x35213f,.75));
+const key=new THREE.DirectionalLight(0xffd5e4,1.2);key.position.set(-4,6,6);scene.add(key);
+const blueBack=new THREE.PointLight(0x155aff,38,14,2);blueBack.position.set(-2.4,1.8,-2.2);scene.add(blueBack);
+const violetBack=new THREE.PointLight(0x7007bf,38,14,2);violetBack.position.set(2.4,1.8,-2.2);scene.add(violetBack);
+const fill=new THREE.DirectionalLight(0xff83bc,.25);fill.position.set(-4,1,0);scene.add(fill);
 
 // Soft contact shadow; the character and all visible fibers are live geometry.
 const shadowCanvas=document.createElement('canvas');shadowCanvas.width=128;shadowCanvas.height=128;
@@ -101,10 +101,10 @@ function makeFur(){
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
   furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
   furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},cyanBackPosition:{value:cyanBack.position},pinkBackPosition:{value:pinkBack.position}},vertexShader:`
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},blueBackPosition:{value:blueBack.position},violetBackPosition:{value:violetBack.position}},vertexShader:`
     attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
     uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;uniform vec3 hatOffset;
-    uniform mat3 furNormalMatrix;uniform vec3 cyanBackPosition;uniform vec3 pinkBackPosition;
+    uniform mat3 furNormalMatrix;uniform vec3 blueBackPosition;uniform vec3 violetBackPosition;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
     float backlight(vec3 lightPosition,vec3 worldP,vec3 N,vec3 V,float edge){
@@ -137,14 +137,14 @@ function makeFur(){
       vec3 displacedP=displace(p);vec3 worldP=(modelMatrix*vec4(displacedP,1.0)).xyz;
       vec3 litNormal=normalize(furNormalMatrix*n);float light=max(dot(litNormal,normalize(vec3(-.5,.8,1.0))),0.0);
       vec3 pink=mix(vec3(.36,.005,.09),vec3(.98,.10,.40),.38+light*.62);
-      vColor=pink*(.67+seed*.37)*(.66+t*.46);
-      vec3 V=normalize(cameraPosition-worldP);float edge=pow(1.0-abs(dot(litNormal,V)),3.0);
+      vColor=pink*(.67+seed*.37)*(.66+t*.46)*.38;
+      vec3 V=normalize(cameraPosition-worldP);float edge=pow(max(0.0,1.0-abs(dot(litNormal,V))),3.0);
       float tips=mix(.18,1.0,smoothstep(.05,.85,t))*(.8+seed*.3);
-      float cyanRim=backlight(cyanBackPosition,worldP,litNormal,V,edge)*tips;
-      float pinkRim=backlight(pinkBackPosition,worldP,litNormal,V,edge)*tips;
-      float rimSum=cyanRim+pinkRim;
-      vec3 rimColor=vec3(.005,.90,1.2)*cyanRim+vec3(1.4,.005,.28)*pinkRim;
-      // Let the transmitted light color dominate thin fibers instead of bleaching pink to white.
+      float blueRim=backlight(blueBackPosition,worldP,litNormal,V,edge)*tips;
+      float violetRim=backlight(violetBackPosition,worldP,litNormal,V,edge)*tips;
+      float rimSum=blueRim+violetRim;
+      vec3 rimColor=vec3(.004,.055,1.0)*blueRim+vec3(.16,.002,.52)*violetRim;
+      // Saturated blue/violet transmission catches the tips above the dimmer front light.
       vColor=mix(vColor,rimColor/max(rimSum,.001),clamp(rimSum*4.5,0.0,.96))+rimColor*.65;
       gl_Position=projectionMatrix*modelViewMatrix*vec4(displacedP,1.0);
     }`,fragmentShader:`varying vec3 vColor;varying float vT;void main(){gl_FragColor=vec4(vColor,1.0);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(';#include',';\n#include')});
