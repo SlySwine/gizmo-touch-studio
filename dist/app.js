@@ -20,6 +20,17 @@ const nodeVelocities=[];
 for(let i=0;i<MAX;i++)nodes.push({center:new THREE.Vector3(0,-100,0),value:new THREE.Vector3(),velocity:new THREE.Vector3(),target:new THREE.Vector3(),radius:0.72});
 for(const n of nodes)nodeVelocities.push(n.velocity);
 let nextNode=0, response=0, responseTarget=0, brushJoy=0;
+const expression={surprise:0,annoyance:0,blink:0,pleased:0,label:'sleepy'};
+const reaction={at:-100,lastPoke:-100,pokes:0,kind:'idle',gaze:new THREE.Vector2()};
+const eyeFeel=new THREE.Vector4();
+function react(kind,point){
+  reaction.at=time;reaction.kind=kind;
+  if(kind==='poke'){reaction.pokes=time-reaction.lastPoke<4?reaction.pokes+1:1;reaction.lastPoke=time;brushJoy=0;}
+  if(kind==='pull')brushJoy=0;
+  if(kind==='brush'){reaction.pokes=0;brushJoy=1;}
+  reaction.gaze.set(THREE.MathUtils.clamp(point.x/1.7,-1,1),THREE.MathUtils.clamp((point.y-2.3)/1.5,-1,1));
+}
+
 const raycaster=new THREE.Raycaster(), pointer=new THREE.Vector2();
 const hitPlane=new THREE.Plane(), temp=new THREE.Vector3(), temp2=new THREE.Vector3();
 const uCenter=nodes.map(n=>n.center), uDisplace=nodes.map(n=>n.value), uRadius=new Float32Array(MAX).fill(.72);
@@ -32,7 +43,7 @@ catch(e){fail('Gizmo needs WebGL to play. Try a browser with hardware accelerati
 renderer.setPixelRatio(Math.min(devicePixelRatio,coarse?1.5:2));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
-scene.add(new THREE.HemisphereLight(0xf7d5ec,0x28243e,2.1));
+scene.add(new THREE.HemisphereLight(0xf7d5ec,0x35213f,2.1));
 const key=new THREE.DirectionalLight(0xffd5e4,3.3);key.position.set(-4,6,6);scene.add(key);
 const rim=new THREE.DirectionalLight(0x86cfff,2.3);rim.position.set(4,4,-2);scene.add(rim);
 const fill=new THREE.DirectionalLight(0xff83bc,.9);fill.position.set(-4,1,0);scene.add(fill);
@@ -42,7 +53,7 @@ const shadowCanvas=document.createElement('canvas');shadowCanvas.width=128;shado
 const sc=shadowCanvas.getContext('2d');const sg=sc.createRadialGradient(64,64,3,64,64,64);
 sg.addColorStop(0,'rgba(0,0,0,.65)');sg.addColorStop(.5,'rgba(0,0,0,.34)');sg.addColorStop(1,'rgba(0,0,0,0)');sc.fillStyle=sg;sc.fillRect(0,0,128,128);
 const shadow=new THREE.Mesh(new THREE.PlaneGeometry(6.9,4.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.set(0,-.005,0);scene.add(shadow);
-const floor=new THREE.Mesh(new THREE.CircleGeometry(2.9,96),new THREE.MeshBasicMaterial({color:0x24314b,transparent:true,opacity:.16,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.01;scene.add(floor);
+const floor=new THREE.Mesh(new THREE.CircleGeometry(2.9,96),new THREE.MeshBasicMaterial({color:0x503169,transparent:true,opacity:.16,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.01;scene.add(floor);
 
 function fail(text){loading.classList.remove('hidden');loading.innerHTML='';const p=document.createElement('p');p.className='error';p.textContent=text;loading.append(p);}
 function setMood(text){if(mood.textContent!==text)mood.textContent=text;}
@@ -62,7 +73,7 @@ new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
   rig.traverse(o=>{if(!o.isMesh)return;o.frustumCulled=false;
     if(o.name==='Body'){body=o;bodyGeometry=o.geometry;base=new Float32Array(o.geometry.attributes.position.array);o.material=new THREE.MeshStandardMaterial({color:0xe82c85,roughness:1,bumpMap:noiseTexture,bumpScale:.035});}
     else if(o.name.startsWith('Hat')){o.material=new THREE.MeshStandardMaterial({color:o.name==='HatBand'?0x171322:0x10101b,roughness:o.name==='HatBand'?.63:.94,bumpMap:noiseTexture,bumpScale:.025});attachments.push({mesh:o,anchor:new THREE.Vector3(-1,3.37,0),original:o.position.clone()});}
-    else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nvec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-eyes';eyes.push(o);}
+    else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.eyeFeel={value:eyeFeel};shader.uniforms.eyeCenter={value:center};shader.uniforms.eyePupil={value:o.name.includes('Pupil')?1:0};shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec4 eyeFeel;uniform vec3 eyeCenter;uniform float eyePupil;uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nif(eyePupil>0.5){transformed.x=eyeCenter.x+(transformed.x-eyeCenter.x)*(1.0+eyeFeel.x*.55)+eyeFeel.z*.085;transformed.y=eyeCenter.y+(transformed.y-eyeCenter.y)*(1.0+eyeFeel.x*.38)+eyeFeel.w*.055;}else{transformed.y+=eyeFeel.x*.17;}vec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-expressive-eyes';eyes.push(o);}
   });
   if(!body)throw new Error('Body missing from character asset');
   makeFur();loaded=true;loading.classList.add('hidden');resize();
@@ -88,28 +99,32 @@ function makeFur(){
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
   furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
   furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind}},vertexShader:`
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel}},vertexShader:`
     attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
-    uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;
+    uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
     void main(){
       float t=position.y;vT=t;vec3 n=hairNormal;
       vec3 tangent=normalize(cross(n,abs(n.y)<.9?vec3(0,1,0):vec3(1,0,0)));
       vec3 bitangent=cross(n,tangent);
-      float angle=seed*62.83;vec3 curl=(tangent*cos(angle)+bitangent*sin(angle))*(.018+seed*.038);
-      float dx=abs(abs(root.x)-.736);
-      float lid=length(vec2(max(dx-.402,0.0),root.y-2.465))-.145;
-      float pupil=(length(vec2(dx/.165,(root.y-2.265)/.245))-1.0)*.165;
-      float trim=root.z>1.0?mix(.035,1.0,smoothstep(-.005,.07,min(lid,pupil))):1.0;
-      curl*=trim;float len=mix(.048+seed*.060,.14+(seed-.75)*.16,step(.75,seed))*trim;float laid=clamp(length(groom)*3.5,0.0,.72);
+      float angle=seed*62.83;vec3 curl=(tangent*cos(angle)+bitangent*sin(angle))*(.030+seed*.064);
+      float dx=abs(abs(root.x-eyeFeel.z*.085)-.736);
+      float browY=2.465+eyeFeel.x*.30+(root.x<0.0?.075:-.020)*eyeFeel.y;
+      float lid=length(vec2(max(abs(abs(root.x)-.736)-mix(.402,.18,eyeFeel.x),0.0),root.y-browY))-mix(.145,.17,eyeFeel.x);
+      float pupil=(length(vec2(dx/(.165*(1.0+eyeFeel.x*.77)),(root.y-2.265-eyeFeel.w*.055)/(.245*(1.0+eyeFeel.x*.85))))-1.0)*.165;
+      float trim=root.z>1.0?mix(.02,1.0,smoothstep(-.015,.115,min(lid,pupil)-.03)):1.0;
+      float underHat=(1.0-smoothstep(.84,1.12,length(vec2((root.x+.995)/1.35,(root.z-.04)/1.03))))*smoothstep(2.72,2.98,root.y);
+      trim*=mix(1.0,.05,underHat);
+      curl*=trim;float len=mix(.09+seed*.105,.24+(seed-.75)*.30,step(.75,seed))*trim;float laid=clamp(length(groom)*3.5,0.0,.72);
       vec3 inertia=hairWind;
       for(int i=0;i<6;i++){vec3 d=root-centers[i];inertia-=velocities[i]*.013*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}
       inertia-=n*dot(n,inertia);inertia=clamp(inertia,vec3(-.13),vec3(.13));
-      vec3 p=root+n*(.008+len*t*(1.0-laid))+curl*t*t+(groom+inertia)*t*t*trim;
+      vec3 gravity=vec3(0,-1,0)+n*n.y;
+      vec3 p=root+n*(.008+len*t*(1.0-laid))+(curl+gravity*len*.35)*t*t+(groom+inertia)*t*t*trim;
       vec3 viewDir=normalize(localCamera-root);
       vec3 side=normalize(cross(n+groom*7.0,viewDir)+vec3(.0001));
-      p+=side*position.x*(.0030+seed*.0013)*(1.0-t*.96);
+      p+=side*position.x*(.0043+seed*.0018)*(1.0-t*.96);
       vec3 litNormal=normalize(mat3(modelMatrix)*n);float light=max(dot(litNormal,normalize(vec3(-.5,.8,1.0))),0.0);
       float rim=max(dot(litNormal,normalize(vec3(.8,.6,-.3))),0.0);
       vec3 pink=mix(vec3(.36,.005,.09),vec3(.98,.10,.40),.38+light*.62);
@@ -124,7 +139,7 @@ const toolNames=['poke','pull','brush','turn'];
 function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, or turn.');endGesture();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':'Perfectly unbothered.');idleReturn=time+4;}
 
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
-function reset(){endGesture();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;}groomed=0;response=0;responseTarget=0;brushJoy=0;maxDeform=0;if(rig){rig.position.set(0,-1.8,0);rig.rotation.set(0,0,0);rig.scale.set(1,1,1);pivot.rotation.set(0,0,0);}setMood('Fresh fluff. Fresh start.');idleReturn=time+3;}
+function reset(){endGesture();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;}groomed=0;response=0;responseTarget=0;brushJoy=0;reaction.at=reaction.lastPoke=-100;reaction.pokes=0;reaction.kind='idle';reaction.gaze.set(0,0);expression.surprise=expression.annoyance=expression.blink=expression.pleased=0;expression.label='sleepy';eyeFeel.set(0,0,0,0);maxDeform=0;if(rig){rig.position.set(0,-1.8,0);rig.rotation.set(0,0,0);rig.scale.set(1,1,1);pivot.rotation.set(0,0,0);}setMood('Fresh fluff. Fresh start.');idleReturn=time+3;}
 document.querySelector('#reset').addEventListener('click',reset);
 
 function ray(e){const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(pointer,camera);cursor.style.left=(e.clientX-r.left)+'px';cursor.style.top=(e.clientY-r.top)+'px';}
@@ -141,9 +156,9 @@ function startGesture(e){
   const n=tool==='brush'?null:newNode(hit.point,tool==='pull'?1.03:.86);
   hitPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.world);
   active={id:e.pointerId,node:n,start:hit.world.clone(),last:hit.point.clone(),tool,point:hit.point.clone(),startTime:time,eventTime:e.timeStamp,dragVelocity:new THREE.Vector3()};stage.classList.add('contact');cursor.style.opacity='1';
-  if(tool==='poke'){n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-5.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.72;setMood('Oh. Hello there.');}
-  if(tool==='pull'){responseTarget=.75;setMood('A little stretch…');}
-  if(tool==='brush'){brushJoy=.8;setMood('That’s the spot.');}
+  if(tool==='poke'){react('poke',hit.point);n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-5.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.96;setMood(reaction.pokes>=4?'Personal space. Ever heard of it?':reaction.pokes>=2?'You again.': 'Hey! I was napping.');}
+  if(tool==='pull'){react('pull',hit.point);responseTarget=.75;setMood('A little stretch…');}
+  if(tool==='brush'){react('brush',hit.point);brushJoy=1;setMood('That’s the spot.');}
 }
 function moveGesture(e){
   if(!loaded)return;ray(e);
@@ -177,13 +192,13 @@ function endGesture(e){
     if(gesture.tool==='turn'&&(e?.type!=='pointerup'||e.timeStamp-gesture.eventTime>100||calm))orbit.vx=orbit.vy=0;
     if(pendingBrush&&gesture.tool==='brush'){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);responseTarget=0;idleReturn=time+3.5;
-    setMood(gesture.tool==='turn'?'Admire away.':gesture.tool==='brush'?'Impeccably groomed. Mostly.':'Back to his usual self.');
+    setMood(gesture.tool==='turn'?'Admire away.':gesture.tool==='brush'?'Impeccably groomed. Mostly.':gesture.tool==='poke'?(reaction.pokes>=3?'I’m counting those.':'You startled me.'):'Back to his usual self.');
   }
   stage.classList.remove('contact');stage.classList.toggle('turn',tool==='turn');
 }
 
 canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('pointermove',moveGesture);canvas.addEventListener('pointerup',endGesture);canvas.addEventListener('pointercancel',endGesture);canvas.addEventListener('lostpointercapture',endGesture);canvas.addEventListener('pointerleave',()=>{if(!active)cursor.style.opacity='0';});window.addEventListener('blur',()=>endGesture());document.addEventListener('visibilitychange',()=>{if(document.hidden)endGesture();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
-window.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const values={'1':'poke','2':'pull','3':'brush','4':'turn'};if(values[e.key])setTool(values[e.key]);if(e.key.toLowerCase()==='r')reset();if(document.activeElement!==canvas||!loaded)return;if(e.key===' '){e.preventDefault();const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-7.5;responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;}if(e.key.startsWith('Arrow')){e.preventDefault();const d=new THREE.Vector3(e.key==='ArrowLeft'?-.5:e.key==='ArrowRight'?.5:0,e.key==='ArrowUp'?.5:e.key==='ArrowDown'?-.5:0,0);if(tool==='turn'){orbit.yaw+=d.x*.65;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+d.y*.35,-.6,.6);}else if(tool==='brush'){groom(new THREE.Vector3(0,1.6,1.3),d);brushJoy=1;}else{const n=newNode(new THREE.Vector3(0,1.6,1.2),.8);n.velocity.copy(d).multiplyScalar(9);gestureCount++;}}});
+window.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const values={'1':'poke','2':'pull','3':'brush','4':'turn'};if(values[e.key])setTool(values[e.key]);if(e.key.toLowerCase()==='r')reset();if(document.activeElement!==canvas||!loaded)return;if(e.key===' '){e.preventDefault();react('poke',new THREE.Vector3(0,1.6,1.25));setMood(reaction.pokes>=3?'I’m counting those.':'Hey! I was napping.');const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-7.5;responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;}if(e.key.startsWith('Arrow')){e.preventDefault();const d=new THREE.Vector3(e.key==='ArrowLeft'?-.5:e.key==='ArrowRight'?.5:0,e.key==='ArrowUp'?.5:e.key==='ArrowDown'?-.5:0,0);if(tool==='turn'){orbit.yaw+=d.x*.65;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+d.y*.35,-.6,.6);}else if(tool==='brush'){react('brush',new THREE.Vector3(0,1.6,1.3));groom(new THREE.Vector3(0,1.6,1.3),d);brushJoy=1;}else{react(tool,new THREE.Vector3(0,1.6,1.2));const n=newNode(new THREE.Vector3(0,1.6,1.2),.8);n.velocity.copy(d).multiplyScalar(9);gestureCount++;}}});
 
 function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;time+=dt;frame++;
   if(loaded){let moving=false,max=0;
@@ -191,9 +206,21 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     const steps=Math.max(3,Math.ceil(dt/.008)),h=dt/steps;physicsSteps+=steps;for(const n of nodes){for(let s=0;s<steps;s++){const held=active?.node===n;const k=held?165:84,damping=held?16:5.3;n.velocity.addScaledVector(temp.copy(n.target).sub(n.value),k*h).multiplyScalar(Math.exp(-damping*h));n.value.addScaledVector(n.velocity,h).clampLength(0,3.1);n.velocity.clampLength(0,18);}if(n.value.lengthSq()+n.velocity.lengthSq()>.000001)moving=true;max=Math.max(max,n.value.length());}maxDeform=max;
     if(moving||dirtyBody||frame%20===0){const arr=bodyGeometry.attributes.position.array;for(let i=0;i<base.length;i+=3){field(base[i],base[i+1],base[i+2],temp);arr[i]=base[i]+temp.x;arr[i+1]=base[i+1]+temp.y;arr[i+2]=base[i+2]+temp.z;}bodyGeometry.attributes.position.needsUpdate=true;if(frame%3===0)bodyGeometry.computeVertexNormals();bodyGeometry.computeBoundingSphere();dirtyBody=false;}
     for(const a of attachments){field(a.anchor.x,a.anchor.y,a.anchor.z,temp);a.mesh.position.copy(a.original).add(temp);}
-    response+=(responseTarget-response)*Math.min(1,dt*9);brushJoy=Math.max(0,brushJoy-dt*.17);
-    const blink=!active&&Math.sin(time*.79)>.998?Math.pow((Math.sin(time*.79)-.998)/.002,1.4):0;
-    for(const eye of eyes){const dict=eye.morphTargetDictionary;const values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=response;values[dict.Smug]=brushJoy*.66;values[dict.Blink]=blink*(1-response);values[dict.Skeptical]=0;}
+    const age=time-reaction.at,heldPoke=active?.tool==='poke',heldPull=active?.tool==='pull';
+    brushJoy=Math.max(0,brushJoy-dt*.20);
+    const startled=(reaction.kind==='poke'||reaction.kind==='pull')?Math.exp(-Math.max(0,age-.25)*2.1):0;
+    const flinch=reaction.kind==='poke'?Math.max(0,1-Math.abs(age-.055)/.065):0;
+    const annoyance=reaction.kind==='poke'?THREE.MathUtils.smoothstep(age,.22,.9)*Math.min(1,.24+Math.max(0,reaction.pokes-1)*.27+(heldPoke&&age>1?.35:0))*Math.exp(-Math.max(0,age-2.7)*1.1):0;
+    const targetSurprise=Math.max(responseTarget,startled)*(1-annoyance*.72)*(1-flinch*.85);
+    expression.surprise+=(targetSurprise-expression.surprise)*Math.min(1,dt*15);
+    expression.annoyance+=(annoyance-expression.annoyance)*Math.min(1,dt*8);
+    expression.pleased+=(brushJoy-expression.pleased)*Math.min(1,dt*7);
+    const idleBlink=!active&&Math.sin(time*.79)>.998?Math.pow((Math.sin(time*.79)-.998)/.002,1.4):0;
+    expression.blink=Math.max(flinch,idleBlink*(1-expression.surprise));
+    expression.label=expression.blink>.45?'flinch':expression.surprise>.6?(heldPull?'alarmed':'startled'):expression.pleased>.4?'pleased':expression.annoyance>.32?'annoyed':'sleepy';
+    response=expression.surprise;
+    eyeFeel.set(expression.surprise,expression.annoyance,reaction.gaze.x*Math.min(1,expression.surprise+expression.annoyance),reaction.gaze.y*expression.surprise);
+    for(const eye of eyes){const dict=eye.morphTargetDictionary,values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=expression.surprise;values[dict.Smug]=expression.pleased*.95*(1-expression.surprise);values[dict.Blink]=expression.blink;values[dict.Skeptical]=expression.annoyance*(1-expression.surprise*.6);}
     if(pendingBrush){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     for(let s=0;s<steps;s++){wobble.velocity.addScaledVector(wobble.value,-65*h).multiplyScalar(Math.exp(-5.8*h));wobble.value.addScaledVector(wobble.velocity,h).clampLength(0,.2);}
     if(active?.tool!=='turn'){orbit.yaw+=orbit.vx*dt;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+orbit.vy*dt,-.6,.6);orbit.vx*=Math.exp(-5*dt);orbit.vy*=Math.exp(-6*dt);}
@@ -209,7 +236,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,active:!!active,gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,tool,active:!!active,gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, or Turn in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:['poke','pull','brush','turn']}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!['poke','pull','brush','turn'].includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});

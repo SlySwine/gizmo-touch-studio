@@ -1,6 +1,6 @@
 # Gizmo · Touch Studio
 
-Private Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency, analytics, or storage. Serve `dist` over HTTP; no build is required.
+Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency, analytics, or storage. Serve `dist` over HTTP; no build is required.
 
 ```sh
 python3 -m http.server 8764 --directory dist
@@ -16,6 +16,6 @@ The browser uses procedural tapered fur strands (145,000 on desktop; 85,000 for 
 
 ## Implementation
 
-Three.js 0.180.0 is vendored under `dist/vendor` with its MIT license. The GLTF loader's relative utility import is adjusted for the flattened vendor directory. Six bounded Gaussian spring fields deform the body and eyes; the same field deforms the GPU fur. The coat combines dense short pile with longer guard hairs. Brush strokes update per-strand tangent directions once per frame. Fur follows local spring velocity and turning momentum. Poke depth is 0.78 units; pull extends to 2.65 units with broader falloff, bounded release momentum, pronounced underdamped overshoot and whole-body wobble. Turning uses a separate torso pivot with persistent yaw, bounded pitch and decaying inertia. Pointer capture, pointerup/cancel/lost capture, blur, visibility, tool switching and resize release active gestures. Deformation is bounded and integrated in substeps.
+Three.js 0.180.0 is vendored under `dist/vendor` with its MIT license. The GLTF loader's relative utility import is adjusted for the flattened vendor directory. Six bounded Gaussian spring fields deform the body and eyes; the same field deforms the GPU fur. The coat combines dense pile with longer guard hairs, now approximately 1.8× longer and 1.4× thicker than the first dense-fur revision. Subtle gravity along the surface softens the long tips. The background and surrounding surfaces use deep purple. The eye and hat fur masks keep the longer coat clear of facial details and the brim. Pokes trigger a quick flinch, widened startled eyes and gaze toward the touch; repeated pokes build a skeptical response, pulls produce alarm, and brushing produces a pleased expression. Native eye morphs are blended with small additional reactive eye transforms. Reset clears the reaction history. Brush strokes update per-strand tangent directions once per frame. Fur follows local spring velocity and turning momentum. Poke depth is 0.78 units; pull extends to 2.65 units with broader falloff, bounded release momentum, pronounced underdamped overshoot and whole-body wobble. Turning uses a separate torso pivot with persistent yaw, bounded pitch and decaying inertia. Pointer capture, pointerup/cancel/lost capture, blur, visibility, tool switching and resize release active gestures. Deformation is bounded and integrated in substeps.
 
 Native browser WebMCP, when present, exposes selecting the four visible tools and resetting the same state. Unsupported browsers use the normal UI without error.
