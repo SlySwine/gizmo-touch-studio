@@ -1,5 +1,7 @@
 # Gizmo · Touch Studio
 
+[Live playground](https://slyswine.github.io/gizmo-touch-studio/) · [Deployment runs](https://github.com/SlySwine/gizmo-touch-studio/actions/workflows/pages.yml)
+
 Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency, analytics, or storage. Serve `dist` over HTTP; no build is required.
 
 ```sh
@@ -10,7 +12,7 @@ Open http://localhost:8764. Select Poke, Pull, Brush, or Turn; press/drag direct
 
 ## GitHub deployment
 
-This repository is the source for Gizmo’s GitHub Pages deployment. Pushes to `main` validate the JavaScript, linked assets and GLB model, then publish the `dist/` directory. Pull requests run validation without publishing. The Actions workflow uses GitHub’s short-lived deployment identity; no personal token or additional deployment secret belongs in this repository.
+This public repository is the source for Gizmo’s public GitHub Pages deployment. Pushes to `main` validate the JavaScript, linked assets and GLB model, then publish the `dist/` directory. Pull requests run validation without publishing. The `github-pages` environment permits the `main` branch only. The Actions workflow uses GitHub’s short-lived deployment identity; no personal token or additional deployment secret belongs in this repository.
 
 Run `node scripts/validate-site.mjs` before pushing. To republish the current commit, run the **Validate and deploy Gizmo** workflow manually. To roll back, revert the unwanted commit on `main`; that new commit deploys automatically.
 
