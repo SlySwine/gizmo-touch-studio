@@ -13,3 +13,5 @@
 .tool-settings{position:absolute;left:50%;bottom:calc(100% + 8px);transform:translateX(-50%);width:min(320px,calc(100vw - 28px));margin:0}.controls{padding-bottom:calc(30px + env(safe-area-inset-bottom))}.mood{position:fixed;bottom:calc(6px + env(safe-area-inset-bottom));z-index:3;font-size:13px;line-height:18px}
 
 .brush-settings{--setting-color:#87e5e6;border-color:#52777f}.brush-settings label{color:#d0e9ed}
+
+.play-button{background:#d5c0f6;color:#221537;border-color:#e9d9ff}.play-button span{display:inline}.play-button:hover{background:#e9d9ff}#neon-frame-wrap{position:fixed;inset:0;z-index:20;background:#080b20}#neon-frame-wrap[hidden]{display:none}#neon-frame{border:0;width:100%;height:100%;display:block}@media(max-height:500px){#studio{height:100svh;min-height:0}.masthead{padding:14px 22px}.controls{padding:8px 16px 12px}.tool{padding:10px 15px}.mood{font-size:11px}}

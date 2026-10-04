@@ -1,0 +1,132 @@
+{
+  "asset": "Neon Wilds garden sanctuary",
+  "generator": "tools/build_neon_world.py",
+  "blender_version": "5.2.1 LTS",
+  "coordinates": "Three.js x/y/z; y-up GLB",
+  "source": "source/neon-world.blend",
+  "glb_bytes": 9525132,
+  "triangle_count": 273484,
+  "meshes": 21,
+  "draw_calls": 21,
+  "materials": [
+    {
+      "name": "Midnight titanium",
+      "roughness": 0.38999998569488525,
+      "emission": 0.0
+    },
+    {
+      "name": "Blue-black ceramic",
+      "roughness": 0.5299999713897705,
+      "emission": 0.0
+    },
+    {
+      "name": "Wet obsidian pavers",
+      "roughness": 0.5699999928474426,
+      "emission": 0.0
+    },
+    {
+      "name": "Wet indigo pavers",
+      "roughness": 0.550000011920929,
+      "emission": 0.0
+    },
+    {
+      "name": "Pearlescent route alloy",
+      "roughness": 0.44999998807907104,
+      "emission": 0.0
+    },
+    {
+      "name": "Brushed pale titanium",
+      "roughness": 0.3199999928474426,
+      "emission": 0.0
+    },
+    {
+      "name": "Amethyst architectural enamel",
+      "roughness": 0.23000000417232513,
+      "emission": 0.0
+    },
+    {
+      "name": "Plum conservatory enamel",
+      "roughness": 0.28999999165534973,
+      "emission": 0.0
+    },
+    {
+      "name": "Optical blue crystal",
+      "roughness": 0.11999999731779099,
+      "emission": 0.0
+    },
+    {
+      "name": "Cyan photon strips",
+      "roughness": 0.30000001192092896,
+      "emission": 0.6499999761581421
+    },
+    {
+      "name": "Rose photon strips",
+      "roughness": 0.30000001192092896,
+      "emission": 0.6000000238418579
+    },
+    {
+      "name": "Violet photon strips",
+      "roughness": 0.3400000035762787,
+      "emission": 0.550000011920929
+    },
+    {
+      "name": "Amber reactor light",
+      "roughness": 0.30000001192092896,
+      "emission": 0.699999988079071
+    },
+    {
+      "name": "Cool white light",
+      "roughness": 0.3499999940395355,
+      "emission": 0.4000000059604645
+    },
+    {
+      "name": "Holographic fern blades",
+      "roughness": 0.36000001430511475,
+      "emission": 0.05999999865889549
+    },
+    {
+      "name": "Iridescent fern reverse",
+      "roughness": 0.4000000059604645,
+      "emission": 0.03999999910593033
+    },
+    {
+      "name": "Lucent membrane",
+      "roughness": 0.18000000715255737,
+      "emission": 0.05000000074505806
+    },
+    {
+      "name": "Moss velvet",
+      "roughness": 0.9100000262260437,
+      "emission": 0.0
+    },
+    {
+      "name": "Still cyan water",
+      "roughness": 0.17000000178813934,
+      "emission": 0.05999999865889549
+    },
+    {
+      "name": "Terrace garden brass",
+      "roughness": 0.41999998688697815,
+      "emission": 0.0
+    },
+    {
+      "name": "Nocturnal iris petals",
+      "roughness": 0.4000000059604645,
+      "emission": 0.07999999821186066
+    }
+  ],
+  "collision_contract": "Opaque geometry inside the playable boundary matches world.json colliders and surfaces. Canopy ribs begin above shared solid support posts. Soft foliage is pass-through. Enclosing walls lie outside world bounds, with camera shells supplied in scene.js. Dynamic powered bridge, ferry and lift are authored by scene.js from the same manifest.",
+  "features": [
+    "Quiet connected avenue and broad district approaches, physically scaled UVs and restrained recessed lighting",
+    "Five collision-matched planted threshold beds, folded irises and sculpted soft ferns",
+    "Rose conservatory with four grounded structural supports and translucent curved botanical canopy",
+    "Blue prism court with six solid pillars supporting three glazed vault bays",
+    "Amber foundry with four grounded pylons carrying the detailed overhead turbine",
+    "Aurora crown, exact continuous ramp and elevated deck",
+    "Manifest-authored west overlook, east terrace, prism access ramps and two secret gardens",
+    "Inset shallow lightwater canal plus static brass ferry and lift docks",
+    "Continuous enclosing garden wall with tiered foundation, planted outer arcades and skyline podiums"
+  ],
+  "spec_id": "neon-wilds-v1",
+  "world_spec_sha256": "2985077132de320fb81aedd96c722daacf418444e7a6351b28ce868b2f40b685"
+}

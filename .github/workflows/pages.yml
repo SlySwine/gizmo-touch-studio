@@ -18,7 +18,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate static site and model
-        run: node scripts/validate-site.mjs
+        run: |
+          node scripts/validate-site.mjs
+          node --test scripts/test-neon-*.mjs
 
   deploy:
     needs: validate
