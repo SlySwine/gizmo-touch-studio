@@ -24,7 +24,7 @@ The reproducible Blender source generator is `tools/build_neon_world.py`. Run it
 
 Validation: `node scripts/validate-site.mjs` and `node --test scripts/test-neon-*.mjs`. Browser journey testing uses actual controls; model tests exercise collision, every quest order, all secrets, saves and failure recovery. Emulated touch and desktop Chrome are covered; physical phone performance needs device testing.
 
-The rejected floating-platform prototype is preserved on `codex/starlight-garden` at `18f079829f3977f32aeb7502a1f412fda649bbc7` ([draft PR #2](https://github.com/SlySwine/gizmo-touch-studio/pull/2)). This replacement is on `codex/neon-wilds`; it is not deployed until approved and merged into main.
+The rejected floating-platform prototype is preserved on `codex/starlight-garden` at `18f079829f3977f32aeb7502a1f412fda649bbc7` ([archived PR #2](https://github.com/SlySwine/gizmo-touch-studio/pull/2)). This replacement is on `codex/neon-wilds`; it is not deployed until approved and merged into main.
 
 ## Voice and hair light
 

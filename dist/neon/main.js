@@ -13,7 +13,7 @@ let model,world,character,ready=false,paused=false,muted=false,runToggle=false,j
 try{muted=localStorage.getItem('gizmo-sound-enabled')==='false';}catch{}
 let time=0,last=0,saveAt=0,hudAt=0,commentUntil=0,moved=0,resizePending=true;
 const keys=new Set(),stick={x:0,y:0,id:null,cx:0,cy:0},lookDrag={id:null,x:0,y:0};
-const orbit={yaw:0,pitch:.43,distance:9};
+const orbit={yaw:0,pitch:.28,distance:9};
 const camera=new THREE.PerspectiveCamera(58,1,.12,180),scene=new THREE.Scene();
 let cameraRig;const target=new THREE.Vector3();
 const renderer=new THREE.WebGLRenderer({canvas,antialias:!coarse,powerPreference:'high-performance'});
@@ -59,14 +59,15 @@ $('restore-journey').addEventListener('click',()=>{
  model=createNeonModel(layout,backup);celebrated=!!model.state.completed;initialCamera=true;clearInput();save();closeMap();if(!model.state.completed)setTrack(model.state.objectives.current);syncHUD();comment('Back to your previous adventure.');
 });
 $('restart-cancel').addEventListener('click',()=>{$('restart-dialog').close();canvas.focus();});
-$('restart-confirm').addEventListener('click',()=>{try{localStorage.setItem(SAVE_KEY+'-previous',JSON.stringify(model.serialize()));}catch{$('restart-dialog').querySelector('p').textContent='A backup could not be saved. Your current journey is still here.';return;}model=createNeonModel(layout);celebrated=false;tracked='jellies';initialCamera=true;orbit.yaw=0;orbit.pitch=.43;clearInput();save();$('restart-dialog').close();setTrack('jellies');syncHUD();canvas.focus();});$('celebration').addEventListener('close',clearInput);
+$('restart-confirm').addEventListener('click',()=>{try{localStorage.setItem(SAVE_KEY+'-previous',JSON.stringify(model.serialize()));}catch{$('restart-dialog').querySelector('p').textContent='A backup could not be saved. Your current journey is still here.';return;}model=createNeonModel(layout);celebrated=false;tracked='jellies';initialCamera=true;orbit.yaw=0;orbit.pitch=.28;clearInput();save();$('restart-dialog').close();setTrack('jellies');syncHUD();canvas.focus();});$('celebration').addEventListener('close',clearInput);
 $('keep-exploring').addEventListener('click',()=>{$('celebration').close();canvas.focus();});
 $('hop').addEventListener('pointerdown',e=>{e.preventDefault();unlock();jump=true;});
 $('run').addEventListener('click',()=>{runToggle=!runToggle;$('run').setAttribute('aria-pressed',String(runToggle));});
-$('recenter').addEventListener('click',()=>{orbit.yaw=(model?.state.player.yaw||0)+Math.PI;orbit.pitch=.43;});
+$('recenter').addEventListener('click',()=>{orbit.yaw=(model?.state.player.yaw||0)+Math.PI;orbit.pitch=.28;});
 $('sound').addEventListener('click',()=>{muted=!muted;try{localStorage.setItem('gizmo-sound-enabled',String(!muted));}catch{}if(embedded)parent.postMessage({type:'neon-sound',muted},location.origin);syncSound();if(!muted)unlock();if(audio){if(muted)audio.suspend();else audio.resume();}});
 function syncSound(){$('sound').setAttribute('aria-pressed',String(!muted));$('sound').setAttribute('aria-label',muted?'Enable sound':'Mute sound');$('sound').textContent=muted?'♪':'♫';}
 $('studio-return').addEventListener('click',()=>{save();clearInput();paused=true;audio?.suspend();if(embedded)parent.postMessage({type:'neon-studio'},location.origin);else location.href='./index.html';});
+document.addEventListener('click',event=>{if(event.detail>0&&event.target.closest('button')&&!paused&&!$('map-dialog').open&&!$('celebration').open&&!$('restart-dialog').open)canvas.focus({preventScroll:true});});
 $('tutorial').querySelector('button').addEventListener('click',()=>{$('tutorial').hidden=true;try{localStorage.setItem('gizmo-neon-controls-seen','true');}catch{}});
 if(coarse){const close=$('tutorial').querySelector('button');$('tutorial').replaceChildren(document.createTextNode('Move: left thumb · Look: drag'),close);}document.querySelectorAll('[data-quest]').forEach(b=>b.addEventListener('click',()=>setTrack(b.dataset.quest)));
 window.addEventListener('keydown',e=>{if(e.key.toLowerCase()==='m'&&$('map-dialog').open&&!e.repeat){e.preventDefault();closeMap();return;}if(e.target.closest('input,select')||(e.target.closest('button')&&[' ','Enter'].includes(e.key))||$('map-dialog').open||$('celebration').open||$('restart-dialog').open)return;if(paused)return;
