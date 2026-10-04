@@ -5,10 +5,12 @@ export function createGizmoSound() {
   const MAX_VOICES = 8;
   const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
   const voices = new Set();
-  const events = { unlock: 0, poke: 0, slap: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
+  const events = { unlock: 0, poke: 0, slap: 0, wonder: 0, star: 0, land: 0, launch: 0, rescue: 0, complete: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
   let enabled = true, available = !!AudioContextClass, disposed = false;
   let context = null, master = null, limiter = null, noise = null, voiceWave = null, purrWave = null, active = null;
   let resumePromise = null, lastPoke = -Infinity, lastSlap = -Infinity;
+  const wonderCooldown = { star: .07, land: .1, launch: .12, rescue: .45, complete: .8 };
+  const lastWonder = Object.create(null);
   try { enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false'; } catch (_) { /* Storage may be private. */ }
 
   const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -302,6 +304,68 @@ export function createGizmoSound() {
     });
   }
 
+  function chime(voice, now, notes, step, shortLength, lastLength, amplitude) {
+    // Alternate two plucked sines so notes can overlap gently without adding
+    // sources. Every pitch change happens after that oscillator reaches zero.
+    const layers = [sourceFor(voice, 'sine', notes[0], 4200), sourceFor(voice, 'sine', notes[1], 4200)];
+    const ends = [now, now];
+    notes.forEach((frequency, index) => {
+      const slot = index % 2, layer = layers[slot], at = now + index * step;
+      const length = index === notes.length - 1 ? lastLength : shortLength;
+      const gain = layer.gain.gain, peak = amplitude * (1 - index * .05);
+      layer.source.frequency.setValueAtTime(frequency, at);
+      gain.setValueAtTime(0, at);
+      gain.linearRampToValueAtTime(peak, at + .008);
+      gain.exponentialRampToValueAtTime(peak * .16, at + length * .55);
+      gain.exponentialRampToValueAtTime(.0001, at + length - .01);
+      gain.linearRampToValueAtTime(0, at + length);
+      ends[slot] = at + length;
+    });
+    layers.forEach((layer, index) => start(layer, now, ends[index] - now + .015));
+  }
+
+  function wonder(kind, strength = 1) {
+    if (!Object.prototype.hasOwnProperty.call(wonderCooldown, kind)) return false;
+    const force = clamp(strength);
+    if (force === 0) return false;
+    return attempt(() => {
+      const now = context.currentTime;
+      if (now - (lastWonder[kind] ?? -Infinity) < wonderCooldown[kind]) {
+        events.dropped++;
+        return false;
+      }
+      const voice = newVoice(kind, 0);
+      if (!voice) return false;
+      const energy = Math.sqrt(force);
+      if (kind === 'star') {
+        chime(voice, now, [783.99, 987.77, 1174.66], .1, .17, .36, .085 * energy);
+      } else if (kind === 'complete') {
+        chime(voice, now, [523.25, 659.25, 783.99, 1046.50], .16, .29, .5, .11 * energy);
+      } else if (kind === 'rescue') {
+        chime(voice, now, [392, 329.63], .16, .26, .38, .065 * energy);
+      } else if (kind === 'land') {
+        const body = sourceFor(voice, 'sine', 85 + force * 70, 600);
+        body.source.frequency.exponentialRampToValueAtTime(58, now + .16);
+        envelope(body, now, .15 * energy, .012, .24);
+        const contact = sourceFor(voice, 'noise', 0, 550 + force * 350);
+        contact.source.loop = false;
+        envelope(contact, now, .065 * energy, .007, .10);
+      } else {
+        const body = sourceFor(voice, 'purr', 115, 1000);
+        body.source.frequency.exponentialRampToValueAtTime(240 + force * 90, now + .29);
+        envelope(body, now, .075 * energy, .045, .42);
+        const air = sourceFor(voice, 'noise', 0, 1200);
+        air.source.loop = false;
+        air.filter.frequency.exponentialRampToValueAtTime(2800, now + .2);
+        envelope(air, now, .055 * energy, .06, .35);
+      }
+      lastWonder[kind] = now;
+      events.wonder++;
+      events[kind]++;
+      return true;
+    });
+  }
+
   function begin(kind, { pan = 0 } = {}) {
     if (!['pull', 'brush', 'turn'].includes(kind)) return false;
     return attempt(() => {
@@ -491,7 +555,7 @@ export function createGizmoSound() {
   }
 
   return Object.freeze({
-    unlock, setEnabled, poke, slap, begin, update, end, reset, stop, dispose,
+    unlock, setEnabled, poke, slap, wonder, begin, update, end, reset, stop, dispose,
     get enabled() { return enabled; },
     get state() {
       return Object.freeze({

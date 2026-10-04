@@ -10,11 +10,28 @@
 </head>
 <body>
 <main id="studio">
-  <header class="masthead"><div class="brand"><h1>Gizmo</h1></div><div class="header-actions"><button class="reset sound-toggle" id="sound-toggle" type="button" title="Mute sound (M)" aria-label="Mute sound" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4z"/><g class="sound-waves"><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></g><path class="sound-slash" d="m15 9 6 6m0-6-6 6"/></svg></button><button class="reset" id="reset" title="Reset Gizmo (R)" aria-label="Reset shape and fur"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg><span>Reset</span></button></div></header>
+  <header class="masthead"><div class="brand"><h1>Gizmo</h1></div><div class="header-actions"><button id="play" class="play-button" type="button" aria-label="Play in the Starlight Garden" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z"/><path d="M3 8v8"/></svg><span>Play</span></button><button class="reset sound-toggle" id="sound-toggle" type="button" title="Mute sound (M)" aria-label="Mute sound" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4z"/><g class="sound-waves"><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></g><path class="sound-slash" d="m15 9 6 6m0-6-6 6"/></svg></button><button class="reset" id="reset" title="Reset Gizmo (R)" aria-label="Reset shape and fur"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg><span>Reset</span></button></div></header>
   <section class="stage" aria-label="Interactive Gizmo playground">
     <canvas id="canvas" tabindex="0" aria-label="Gizmo. Poke, Pull, Brush, Turn, or Slap. Drag his hat or select Turn to rotate him. Keyboard: 1 to 5 selects a tool, Space pokes or slaps, arrows use the selected tool, R resets, M toggles sound."></canvas>
     <div id="loading" role="status"><span class="loading-mark"></span><p>Waking up Gizmo…</p></div>
     <div class="mood" id="mood" aria-live="polite">Perfectly unbothered.</div>
+    <section id="garden-hud" class="garden-hud" aria-label="Starlight Garden progress" hidden>
+      <p class="garden-eyebrow"><span></span> The Starlight Garden</p>
+      <h2 id="garden-heading">Wake the sleeping sky.</h2>
+      <p class="garden-objective">Gather eight lost lights. Bring the constellation home.</p>
+      <div class="garden-progress-row"><div id="garden-progress" aria-hidden="true"></div><output id="garden-count" aria-label="Starlight collected">0 / 8</output></div>
+      <div class="sanctuary"><span>Sanctuary</span><strong id="garden-sanctuary">The First Dream</strong><button id="garden-rescue" type="button" title="Return to your last safe island" aria-label="Return to sanctuary">↶</button></div>
+    </section>
+    <section id="garden-guide" class="garden-guide" hidden>
+      <p id="garden-help">Pull Gizmo back. Follow the arc. Release to fly.</p>
+      <p class="garden-keyboard">Arrows to aim <span>·</span> Space to launch <span>·</span> R to return</p>
+      <div id="garden-charge" class="garden-charge" hidden><i></i><span>0%</span></div>
+    </section>
+    <section id="garden-victory" class="garden-victory" aria-label="Constellation restored" hidden>
+      <span class="victory-spark">✧</span><p class="garden-eyebrow">A little fluff. A lot of wonder.</p>
+      <h2>The sky remembers.</h2><p>Eight lost lights, one very brave little bean.<br>You brought the Starlight Garden back to life.</p>
+      <div><button id="garden-continue" type="button">Keep wandering</button><button id="garden-studio" type="button">Back to Studio</button></div><button id="garden-again" class="dream-again" type="button">Dream again ↗</button>
+    </section>
     <div id="cursor" aria-hidden="true"><i></i></div>
   </section>
   <footer class="controls">

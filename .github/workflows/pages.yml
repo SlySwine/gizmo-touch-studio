@@ -18,7 +18,9 @@ jobs:
         with:
           persist-credentials: false
       - name: Validate static site and model
-        run: node scripts/validate-site.mjs
+        run: |
+          node scripts/validate-site.mjs
+          node scripts/test-garden.mjs
 
   deploy:
     needs: validate

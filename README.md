@@ -1,4 +1,4 @@
-# Gizmo · Touch Studio
+# Gizmo · Touch Studio & Starlight Garden
 
 [Live playground](https://slyswine.github.io/gizmo-touch-studio/) · [Deployment runs](https://github.com/SlySwine/gizmo-touch-studio/actions/workflows/pages.yml)
 
@@ -9,6 +9,14 @@ python3 -m http.server 8764 --directory dist
 ```
 
 Open http://localhost:8764. Select Poke, Pull, Brush, Turn, or Slap; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Slap reveals a floating 10–100% power slider without resizing the character; tap Gizmo once for a broad ripple, a power-sensitive smack and a surprised “Oh!”. Reset clears deformation, grooming, and orientation and restores 55% slap power. Keyboard: 1/2/3/4/5 selects a tool, R resets, M toggles sound; focus the canvas and use Space to poke (or slap in Slap mode), or arrows to use the selected tool. The power slider keeps its native keyboard controls. System reduced-motion preference suppresses idle breathing.
+
+## Starlight Garden
+
+Play opens the garden; Studio returns to the close-up grooming view. The same Gizmo mesh and grooming buffers remain alive in both views, so hair, expressions and tool settings carry across without a copy or reload. The garden pauses while in the studio. The two routes are `#studio` and `#garden`; the Back button follows them. Journey progress and grooming last for the current page session.
+
+Gather eight lost starlights across floating sanctuaries to awaken the final constellation. Pull back and release to launch in the opposite direction: the dotted trajectory uses the same physics as the actual flight. Slap power changes flight distance; pokes give smaller directional hops. Brush and Turn hold Gizmo gently in place until release. Each safe landing updates the sanctuary. Falling or pressing R returns there without losing light or grooming; the studio's Reset retains its original full-reset behavior. In Pull mode, arrows adjust the aim and Space launches. The victory card allows continued wandering, a new journey, or a return to the studio.
+
+The game rules live in `garden-model.js`, without Three.js or browser dependencies. `garden-world.js` owns the procedural scenery, collectibles and effects. `garden.js` joins the journey, camera and interface; the studio continues to own the one character. Run `node scripts/test-garden.mjs` to check launches, collision, progression, cancellation, preview accuracy and recovery.
 
 ## Voice and hair light
 

@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
 import { createGizmoSound } from './sound.js';
 import { createHatContactMap } from './fur-contact.js';
+import { createGarden } from './garden.js';
 
 const canvas=document.querySelector('#canvas'), stage=document.querySelector('.stage');
 const loading=document.querySelector('#loading'), mood=document.querySelector('#mood');
@@ -13,6 +14,7 @@ function toggleSound(e){sound.setEnabled(!sound.enabled);if(sound.enabled)unlock
 soundButton.addEventListener('click',toggleSound);syncSoundButton();
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTime=0;
+let garden=null,studioTool='poke';
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let outerFurCount=0,hatContact,undercoatGeo;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, maxSurfaceDeform=0, frame=0, idleReturn=0;
@@ -84,7 +86,7 @@ for(const [layer,order] of [[floor,-2],[shadow,-1]]){
 
 function fail(text){loading.classList.remove('hidden');loading.innerHTML='';const p=document.createElement('p');p.className='error';p.textContent=text;loading.append(p);}
 function setMood(text){if(mood.textContent!==text)mood.textContent=text;}
-function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);camera.updateProjectionMatrix();endGesture();updateBrushCursor();}
+function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;if(!garden?.active){camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);}camera.updateProjectionMatrix();endGesture();if(garden?.active)garden.update(time,0);updateBrushCursor();}
 new ResizeObserver(resize).observe(stage);
 
 const noiseCanvas=document.createElement('canvas');noiseCanvas.width=128;noiseCanvas.height=128;
@@ -106,7 +108,8 @@ new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
     else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.eyeFeel={value:eyeFeel};shader.uniforms.eyeCenter={value:center};shader.uniforms.eyePupil={value:o.name.includes('Pupil')?1:0};shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec4 eyeFeel;uniform vec3 eyeCenter;uniform float eyePupil;uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nif(eyePupil>0.5){transformed.x=eyeCenter.x+(transformed.x-eyeCenter.x)*(1.0+eyeFeel.x*.55)+eyeFeel.z*.085;transformed.y=eyeCenter.y+(transformed.y-eyeCenter.y)*(1.0+eyeFeel.x*.38)+eyeFeel.w*.055;}else{transformed.y+=eyeFeel.x*.17;}vec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-expressive-eyes';eyes.push(o);}
   });
   if(!body)throw new Error('Body missing from character asset');
-  pickable.push(body,...attachments.map(a=>a.mesh));hatContact=createHatContactMap(attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');resize();
+  pickable.push(body,...attachments.map(a=>a.mesh));hatContact=createHatContactMap(attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');
+  garden=createGarden({scene,camera,pivot,ground:[shadow,floor],lights:[blueBack,violetBack,hairLight],coarse,onTransition:changeView,onEvent:gardenEvent});resize();
 },undefined,error=>{console.error(error);fail('Gizmo could not load. Please refresh to try again.');});
 
 function makeFur(){
@@ -237,10 +240,29 @@ function updateBrushCursor(point){
 function syncBrushControls(){brushSettings.hidden=tool!=='brush';document.querySelector('[data-tool="brush"]').setAttribute('aria-expanded',String(tool==='brush'));brushSizeInput.value=String(brushSize);brushSizeInput.setAttribute('aria-valuetext',brushSize+' percent');brushSizeOutput.value=brushSize+'%';updateBrushCursor();}
 function setBrushSize(value){const percent=Number(value);brushSize=Number.isFinite(percent)?THREE.MathUtils.clamp(Math.round(percent/5)*5,10,100):DEFAULT_BRUSH_SIZE;brushRadius=.62*brushSize/DEFAULT_BRUSH_SIZE;syncBrushControls();}
 brushSizeInput.addEventListener('input',e=>setBrushSize(e.target.value));syncBrushControls();
-function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, turn, or slap.');endGesture();sound.stop();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');syncSlapControls();syncBrushControls();setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':tool==='slap'?'A little slap? I am mostly fluff.':'Perfectly unbothered.');idleReturn=time+4;}
+function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, turn, or slap.');endGesture();sound.stop();if(garden?.active)garden.dispatch({type:'cancel'});tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');syncSlapControls();syncBrushControls();garden?.toolChanged(tool);setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':tool==='slap'?'A little slap? I am mostly fluff.':'Perfectly unbothered.');idleReturn=time+4;}
 
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
+function settleCharacter(){
+  for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);}
+  wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);squash.value=squash.velocity=0;hairWind.set(0,0,0);dirtyBody=true;
+  reaction.at=-100;reaction.kind='idle';response=responseTarget=0;
+}
+function changeView(mode){
+  endGesture();sound.stop();settleCharacter();
+  if(mode==='garden'){studioTool=tool;setTool('pull');setMood('A whole sky. All for me?');}
+  else{setTool(studioTool);setMood('A little touch-up before the next adventure.');}
+}
+function gardenEvent(event){
+  sound.wonder(event.type,event.type==='land'?Math.min(1,(event.impact||1)/9):1);
+  if(event.type==='land')squash.velocity=THREE.MathUtils.clamp(squash.velocity+(event.impact||0)*.065,-2,2);
+  if(event.type==='star'){brushJoy=.8;setMood(event.count===1?'I found a piece of the sky.':'Another little wonder.');idleReturn=time+5;}
+  if(event.type==='rescue'){settleCharacter();setMood('The clouds caught me. Obviously.');idleReturn=time+5;}
+  if(event.type==='complete'){brushJoy=1;setMood('I knew this hat was lucky.');idleReturn=time+15;}
+}
+
 function reset(){
+  if(garden?.active){endGesture();sound.stop();settleCharacter();garden.dispatch({type:'rescue'});return;}
   endGesture();sound.stop();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;
   wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);squash.value=squash.velocity=0;hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;
   for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}
@@ -274,13 +296,21 @@ function performSlap(point,normal,pan=0,direction=null){
   wobble.velocity.add(new THREE.Vector3(push.z*.7,0,-push.x*.8)).clampLength(0,2.5);
   react('slap',point);reaction.strength=strength;responseTarget=0;slapCount++;idleReturn=time+4;
   setMood(strength<.35?'Oh! A little fluff tap.':strength<.75?'Oh! That got the fluff moving.':'OH! I am wobbling everywhere.');
+  if(garden?.active)garden.dispatch({type:'slap',power:strength,direction:direction?Math.sign(direction.x)||1:pointer.x<garden.screenPosition.x?1:-1});
   return sound.slap({strength,pan});
 }
 function startGesture(e){
   if(active||!loaded||e.button!==0)return;
   const picked=pick(e),turning=tool==='turn'||(picked&&picked.object!==body);
-  if(!turning&&!picked)return;
-  const hit=turning?null:contact(e,picked);
+  let hit=turning?null:contact(e,picked);
+  // A small touch halo makes a flying Gizmo catchable without enlarging his mesh.
+  if(!hit&&!turning&&garden?.active&&tool!=='brush'){
+    const r=canvas.getBoundingClientRect(),p=garden.screenPosition;
+    const dx=e.clientX-r.left-(p.x+1)*r.width*.5,dy=e.clientY-r.top-(1-p.y)*r.height*.5;
+    if(Math.hypot(dx,dy)<(coarse?66:54))hit={point:new THREE.Vector3(0,1.8,1.1),world:body.localToWorld(new THREE.Vector3(0,1.8,1.1)),normal:new THREE.Vector3(0,0,1)};
+  }
+  if(!turning&&!hit)return;
+  if(garden?.active&&['pull','brush','turn'].includes(turning?'turn':tool))garden.dispatch({type:'hold',held:true});
   e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);gestureCount++;orbit.vx=orbit.vy=0;
   unlockSound(e);
   if(turning){active={id:e.pointerId,tool:'turn',x:e.clientX,y:e.clientY,eventTime:e.timeStamp,soundSpeed:0,soundPan:pointer.x};sound.begin('turn',{pan:pointer.x});stage.classList.add('turn','contact');setMood('Every side is my good side.');return;}
@@ -292,7 +322,7 @@ function startGesture(e){
   hitPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.world);
   active={id:e.pointerId,node:n,start:hit.world.clone(),last:hit.point.clone(),tool,point:hit.point.clone(),startTime:time,eventTime:e.timeStamp,dragVelocity:new THREE.Vector3(),soundSpeed:0,soundPan:pointer.x};stage.classList.add('contact');cursor.style.opacity='1';
   if(tool==='poke')sound.poke({strength:.6+Math.min(reaction.pokes,4)*.07,pan:pointer.x});else sound.begin(tool,{pan:pointer.x});
-  if(tool==='poke'){react('poke',hit.point);n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-6.6);squash.velocity=THREE.MathUtils.clamp(squash.velocity+.95,-3.2,3.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.96;setMood(reaction.pokes>=4?'Personal space. Ever heard of it?':reaction.pokes>=2?'You again.': 'Hey! I was napping.');}
+  if(tool==='poke'){if(garden?.active)garden.dispatch({type:'poke',direction:pointer.x<garden.screenPosition.x?1:-1});react('poke',hit.point);n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-6.6);squash.velocity=THREE.MathUtils.clamp(squash.velocity+.95,-3.2,3.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.96;setMood(reaction.pokes>=4?'Personal space. Ever heard of it?':reaction.pokes>=2?'You again.': 'Hey! I was napping.');}
   if(tool==='pull'){react('pull',hit.point);responseTarget=.75;setMood('A little stretch…');}
   if(tool==='brush'){react('brush',hit.point);brushJoy=1;setMood('That’s the spot.');}
 }
@@ -312,7 +342,7 @@ function moveGesture(e){
   }
   if(active.tool==='pull'){
     const p=raycaster.ray.intersectPlane(hitPlane,temp);
-    if(p){const localNow=body.worldToLocal(p.clone()),localStart=body.worldToLocal(active.start.clone());const target=localNow.sub(localStart).clampLength(0,2.65);const dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
+    if(p){if(garden?.active)garden.dispatch({type:'aim',x:p.x-active.start.x,y:p.y-active.start.y});const localNow=body.worldToLocal(p.clone()),localStart=body.worldToLocal(active.start.clone());const target=localNow.sub(localStart).clampLength(0,2.65);const dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
       active.dragVelocity.copy(target).sub(active.node.target).divideScalar(dt).clampLength(0,10);active.eventTime=e.timeStamp;active.node.target.copy(target);
       active.soundSpeed=Math.min(1,active.dragVelocity.length()/6);
       active.node.radius=1.03+target.length()*.36;uRadius[nodes.indexOf(active.node)]=active.node.radius;
@@ -333,7 +363,9 @@ function groom(point,delta,from=point){let affected=0;const len=delta.length();i
   for(let i=0;i<furCount;i++){const j=i*3;let x=furRoots[j]-from.x,y=furRoots[j+1]-from.y,z=furRoots[j+2]-from.z;const t=segmentLengthSq?THREE.MathUtils.clamp((x*sx+y*sy+z*sz)/segmentLengthSq,0,1):0;x-=sx*t;y-=sy*t;z-=sz*t;const d=x*x+y*y+z*z;if(d>radius*radius)continue;const nDot=dir.x*furNormals[j]+dir.y*furNormals[j+1]+dir.z*furNormals[j+2];const w=(1-Math.sqrt(d)/radius)*Math.min(1,len*18);for(let k=0;k<3;k++){const target=(dir.getComponent(k)-nDot*furNormals[j+k])*.24;furGroom[j+k]+=(target-furGroom[j+k])*w;}affected++;}groomed+=affected;furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
 function endGesture(e){
   if(e&&active&&e.pointerId!==undefined&&e.pointerId!==active.id)return;
+  if(!active&&garden?.active)garden.dispatch({type:'cancel'});
   if(active){const gesture=active,id=gesture.id;active=null;
+    if(garden?.active){if(gesture.tool==='pull'&&e?.type==='pointerup')garden.dispatch({type:'release'});else garden.dispatch({type:'cancel'});}
     if(e?.type==='pointerup'){
       const firstTouch=sound.state.contextState==='uninitialized';unlockSound(e);
       if(firstTouch&&gesture.tool==='poke')sound.poke({strength:.65,pan:gesture.soundPan});
@@ -354,11 +386,13 @@ canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('poi
 function usesNativeKeys(e){const target=e.target instanceof Element?e.target:document.activeElement;return !!target&&(target.matches('input,textarea,select')||target.isContentEditable);}
 window.addEventListener('keydown',e=>{
   if(e.altKey||e.ctrlKey||e.metaKey||usesNativeKeys(e))return;
+  if(e.key==='Escape'&&garden?.active){e.preventDefault();endGesture();sound.stop();return;}
   if(e.key.toLowerCase()==='m'&&!e.repeat){e.preventDefault();toggleSound(e);return;}
   const values={'1':'poke','2':'pull','3':'brush','4':'turn','5':'slap'};
   if(values[e.key])setTool(values[e.key]);
   if(e.key.toLowerCase()==='r'&&!e.repeat){unlockSound(e);reset();if(e.isTrusted)sound.reset();}
   if(document.activeElement!==canvas||!loaded)return;
+  if(garden?.active&&(e.key===' '||e.key.startsWith('Arrow'))){unlockSound(e);if(garden.key(e,tool,slapPower)){e.preventDefault();return;}}
   if(e.key===' '){
     if(tool==='slap'){e.preventDefault();if(e.repeat||active)return;unlockSound(e);performSlap(new THREE.Vector3(.65,1.7,1.2),new THREE.Vector3(0,0,1));gestureCount++;return;}
     e.preventDefault();unlockSound(e);sound.poke({strength:.7});
@@ -380,7 +414,7 @@ window.addEventListener('keyup',e=>{if(!usesNativeKeys(e)&&e.key.startsWith('Arr
 window.addEventListener('pagehide',e=>{if(e.persisted)sound.stop();else sound.dispose();});
 
 function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;time+=dt;frame++;
-  if(loaded){let moving=false,max=0;
+  if(loaded){garden?.update(time,dt);let moving=false,max=0;
     // Substeps keep the damped spring stable through slow frames and long grabs.
     const steps=Math.max(3,Math.ceil(dt/.008)),h=dt/steps;physicsSteps+=steps;
     let displacementTotal=0;
@@ -424,8 +458,8 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,slapPower,slapCount,brushSize,brushRadius,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,mode:garden?.active?'garden':'studio',garden:garden?.state||null,gardenScreen:garden?.screenPosition||null,tool,slapPower,slapCount,brushSize,brushRadius,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, Turn, or Slap in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
-register({name:'reset_gizmo',title:'Reset Gizmo',description:'Restore Gizmo’s original shape and clear every brush stroke.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+register({name:'reset_gizmo',title:'Reset Gizmo',description:'In the studio, restore Gizmo’s shape and clear brush strokes. In the garden, return to the last sanctuary without clearing the hairstyle or collected starlight.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
