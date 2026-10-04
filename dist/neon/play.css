@@ -3,3 +3,12 @@
 #new-journey,#restore-journey{font-size:10px;padding:0;border:none;background:none;backdrop-filter:none;color:#bccee6;text-decoration:underline}#restart-dialog{max-width:380px}#restart-dialog p{font-size:13px;color:#a7bbd5;line-height:1.6}#restart-dialog>div{display:flex;gap:10px;margin-top:24px}#restart-dialog button{padding:12px 18px;font-size:12px}#restart-confirm{background:#c4ffeb;color:#113432}
 
 dialog footer{gap:8px;flex-wrap:wrap}#restore-journey[hidden]{display:none}
+
+#hop{--charge:0%;width:94px;display:flex;align-items:center;justify-content:center;gap:6px;position:relative;overflow:hidden;background:linear-gradient(90deg,#5ad9c552 var(--charge),#11172bba var(--charge));touch-action:none;user-select:none;-webkit-user-select:none}
+#hop i{font-style:normal;font-size:22px;transition:transform .12s}#hop span{font-size:11px;letter-spacing:.2px}#hop[data-charging=true]{border-color:#baffeb;color:#d2fff0;box-shadow:0 0 18px #50efd335}#hop[data-charging=true] i{transform:scale(1.2,.7)}
+#map-quests button:last-child:nth-child(odd){grid-column:1/-1}
+#bounce-hint{display:block;color:#bbffe9;font-size:8px;line-height:1.4;pointer-events:none;white-space:nowrap}#hop span b{font:inherit;display:block}
+#bounce-hint[hidden]{display:none}#hop[data-demonstration=hold]{box-shadow:0 0 0 3px #9affdd60,0 0 22px #68efc850}#hop[data-demonstration=release]{border-color:#e0fff4;background:#408e7ba0}
+@media(max-width:700px){#comment{bottom:166px;max-width:80%}#tutorial{bottom:224px;font-size:11px;max-width:90%}}
+@media(pointer:coarse){#hop{width:104px;height:47px}#hop span{font-size:12px}.movement-actions{gap:6px}}
+@media(max-height:500px){#hop{width:94px;height:35px}#hop span{font-size:11px}#map-quests{grid-template-columns:repeat(3,1fr)}#map-quests button:last-child:nth-child(odd){grid-column:auto}}

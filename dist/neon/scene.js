@@ -1,6 +1,9 @@
 import * as THREE from 'three';
 import { GLTFLoader } from '../vendor/GLTFLoader.js';
 import { mergeGeometries } from '../vendor/BufferGeometryUtils.js';
+import { createChargeView } from './charge-view.js';
+import { createLumaGuide } from './luma-guide.js';
+import { createWorldRewards } from './world-rewards.js';
 
 const UP = new THREE.Vector3(0, 1, 0);
 const COLORS = { cyan: 0x73f7f0, pink: 0xff83cd, blue: 0x77bcff, gold: 0xffd48a, violet: 0xbb9aff };
@@ -8,13 +11,13 @@ const dirs = [[0, -1], [1, 0], [0, 1], [-1, 0]];
 const clamp = THREE.MathUtils.clamp;
 
 /** Blender architecture, readable puzzle props, and the world's changing atmosphere. */
-export async function createNeonScene({ scene, renderer, layout, coarse = false }) {
+export async function createNeonScene({ scene, renderer, layout, coarse = false, camera = null }) {
   const root = new THREE.Group();
   root.name = 'Neon Wilds';
   scene.add(root);
   const previous = { background: scene.background, fog: scene.fog, environment: scene.environment };
-  scene.background = new THREE.Color(0x17213d);
-  scene.fog = new THREE.FogExp2(0x1b2545, 0.0095);
+  scene.background = new THREE.Color(0x10172d);
+  scene.fog = new THREE.FogExp2(0x192238, 0.011);
   const owned = new Set();
   const keep = value => (owned.add(value), value);
   const physical = options => keep(new THREE.MeshStandardMaterial(options));
@@ -65,8 +68,8 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     return value;
   }
 
-  const ambient = new THREE.HemisphereLight(0xb3daff, 0x2c1944, 0.85);
-  const key = new THREE.DirectionalLight(0xfce5de, 1.45);
+  const ambient = new THREE.HemisphereLight(0xaabede, 0x261d39, 0.68);
+  const key = new THREE.DirectionalLight(0xf5dfd4, 1.12);
   key.position.set(-24, 44, 20);
   key.castShadow = true;
   key.shadow.mapSize.set(coarse ? 1024 : 2048, coarse ? 1024 : 2048);
@@ -74,13 +77,14 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
   key.shadow.camera.right = key.shadow.camera.top = 49;
   key.shadow.camera.near = 1; key.shadow.camera.far = 120;
   key.shadow.normalBias = 0.05; key.shadow.bias = -0.00015;
-  const rim = new THREE.DirectionalLight(0x77baff, 0.75);
+  const rim = new THREE.DirectionalLight(0x829fd5, 0.62);
   rim.position.set(8, 17, -32);
   const hubLight = new THREE.PointLight(0x63cce5, 10, 27, 2);
   hubLight.position.set(0, 5, 1);
   const engineLight = new THREE.PointLight(0xffbd6b, 13, 18, 2);
   engineLight.position.set(25, 4, 17);
-  root.add(ambient, key, key.target, rim, hubLight, engineLight);
+  const conservatoryLight = new THREE.PointLight(0xc47fae, 13, 24, 2); conservatoryLight.position.set(-27, 5, -5);
+  root.add(ambient, key, key.target, rim, hubLight, engineLight, conservatoryLight);
   if (renderer) { renderer.shadowMap.enabled = !coarse; renderer.shadowMap.type = THREE.PCFSoftShadowMap; }
 
   const skyMaterial = keep(new THREE.ShaderMaterial({
@@ -122,7 +126,7 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
   if (renderer) {
     const envScene = new THREE.Scene();
     const roomGeo = new THREE.BoxGeometry(80, 60, 80);
-    const roomMat = new THREE.MeshBasicMaterial({ color: 0x535d7e, side: THREE.BackSide });
+    const roomMat = new THREE.MeshBasicMaterial({ color: 0x3b4862, side: THREE.BackSide });
     envScene.add(new THREE.Mesh(roomGeo, roomMat));
     const panelGeo = new THREE.PlaneGeometry(20, 18), panelMats = [];
     for (const [position, color, scale] of [ [[-15, 22, 12], 0xdce9ff, 1.7], [[16, 8, -22], 0x9ac8ff, 1.1], [[-28, 8, -5], 0x966084, 0.9] ]) {
@@ -157,9 +161,10 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     node.receiveShadow = true;
     const materials = Array.isArray(node.material) ? node.material : [node.material];
     for (const material of materials) {
-      if ('envMapIntensity' in material) material.envMapIntensity = 0.30;
-      if (/paver|route alloy/i.test(material.name)) { material.roughness = Math.max(material.roughness, 0.5); material.metalness = Math.min(material.metalness, 0.42); material.color.multiplyScalar(0.65); if (node.geometry.attributes.uv) { material.bumpMap = paverGrain; material.bumpScale = 0.025; } }
-      if (material.emissiveIntensity > 1) material.emissiveIntensity *= 0.72;
+      if ('envMapIntensity' in material) material.envMapIntensity = 0.24;
+      if (/paver|route alloy/i.test(material.name)) { material.roughness = Math.max(material.roughness, 0.57); material.metalness = Math.min(material.metalness, 0.32); if (node.geometry.attributes.uv) { material.bumpMap = paverGrain; material.bumpScale = 0.025; } }
+      if (material.emissiveIntensity > 1) material.emissiveIntensity *= 0.65;
+      if (/still cyan water/i.test(material.name)) { node.castShadow = false; material.roughness = 0.24; material.envMapIntensity = 0.3; }
       if (material.transparent && material.opacity < 0.75) node.castShadow = false;
     }
     // Camera collision is intentionally limited to substantial, opaque architecture.
@@ -168,18 +173,31 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
 
   // Blender batches by material, so named physics boxes are the dependable camera shell.
   const cameraProxyMaterial = keep(new THREE.MeshBasicMaterial({ colorWrite: false, depthWrite: false }));
-  for (const collider of [...(layout.colliders || []), ...(layout.surfaces || []).filter(surface => surface.type === 'box')]) {
-    const proxy = mesh(geo(new THREE.BoxGeometry(collider.width, collider.height, collider.depth)), cameraProxyMaterial);
-    proxy.position.set(collider.x, (collider.y || 0) + collider.height / 2, collider.z);
+  const conditionalProxies = [];
+  const b = layout.bounds;
+  const boundaryProxies = [
+    { id:'boundary-west', x:b.minX-1.1, z:(b.minZ+b.maxZ)/2, width:1.2, depth:b.maxZ-b.minZ+2, height:3.1 },
+    { id:'boundary-east', x:b.maxX+1.1, z:(b.minZ+b.maxZ)/2, width:1.2, depth:b.maxZ-b.minZ+2, height:3.1 },
+    { id:'boundary-north', x:(b.minX+b.maxX)/2, z:b.minZ-1.1, width:b.maxX-b.minX+1, depth:1.2, height:3.1 },
+    { id:'boundary-south', x:(b.minX+b.maxX)/2, z:b.maxZ+1.1, width:b.maxX-b.minX+1, depth:1.2, height:3.1 }
+  ];
+  for (const collider of [...(layout.colliders || []), ...(layout.surfaces || []).filter(surface => surface.type === 'box'), ...boundaryProxies]) {
+    const planted = /^(garden-threshold-|arrival-bed-)/.test(collider.id), conservatory = collider.id === 'conservatory-planter';
+    const canopy = planted ? 1.5 : conservatory ? 1.8 : 0;
+    // Dense authored plants are opaque to the camera even above their low physical bed.
+    const proxyHeight = collider.height + canopy;
+    const proxy = mesh(geo(new THREE.BoxGeometry(collider.width + (canopy ? .6 : 0), proxyHeight, collider.depth + (canopy ? .6 : 0))), cameraProxyMaterial);
+    proxy.position.set(collider.x, (collider.y || 0) + proxyHeight / 2, collider.z);
     proxy.name = `camera-${collider.id}`; proxy.visible = false;
     proxy.updateMatrixWorld(); occluders.push(proxy);
+    if (collider.requires) { conditionalProxies.push({proxy, requires:collider.requires}); proxy.layers.set(1); }
   }
 
   const interactableRings = new Map();
   for (const item of layout.objects) {
-    if (['secret', 'gate', 'source', 'receiver'].includes(item.kind)) continue;
+    if (['secret', 'gate', 'source', 'receiver', 'guide', 'chime'].includes(item.kind)) continue;
     const group = new THREE.Group(); group.position.set(item.x, (item.y || 0) + 0.04, item.z); root.add(group);
-    const r = floorRing(group, item.kind === 'nursery' ? 2.2 : item.kind === 'console' ? 1.5 : 1.05, glow(COLORS.cyan, 0.34));
+    const r = floorRing(group, item.kind === 'nursery' ? 2.2 : item.kind === 'console' ? 1.5 : 1.05, glow(COLORS.cyan, 0.14));
     r.material.depthWrite = false;
     interactableRings.set(item.id, { group, ring: r, base: item.kind === 'nursery' ? 2.2 : 1.05 });
   }
@@ -225,11 +243,11 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
   const nursery = positioned('nursery');
   const bowlMat = physical({ color: 0x304668, metalness: 0.7, roughness: 0.27 });
   const bowl = mesh(geo(new THREE.SphereGeometry(1.8, 36, 16, 0, Math.PI * 2, Math.PI * 0.52, Math.PI * 0.46)), bowlMat, nursery);
-  bowl.position.y = 1.05; bowl.scale.y = 0.45;
-  const bowlEdge = floorRing(nursery, 1.8, pink, 1.0);
+  bowl.position.y = 0.025; bowl.scale.y = 0.035;
+  const bowlEdge = floorRing(nursery, 1.8, pink, 0.055);
   const nurseryPool = mesh(geo(new THREE.CircleGeometry(1.72, 40)), glow(COLORS.pink, 0.22), nursery);
-  nurseryPool.rotation.x = -Math.PI / 2; nurseryPool.position.y = 0.94;
-  const nurseryHalos = [floorRing(nursery, 1.28, glow(COLORS.pink, 0.25), 0.98), floorRing(nursery, 0.68, glow(COLORS.pink, 0.38), 0.99)];
+  nurseryPool.rotation.x = -Math.PI / 2; nurseryPool.position.y = 0.045;
+  const nurseryHalos = [floorRing(nursery, 1.28, glow(COLORS.pink, 0.25), 0.048), floorRing(nursery, 0.68, glow(COLORS.pink, 0.38), 0.05)];
   const jellyById = new Map();
   for (const [i, id] of ['jelly-a', 'jelly-b', 'jelly-c'].entries()) {
     const jelly = makeJelly([COLORS.pink, COLORS.violet, COLORS.cyan][i], 0.88);
@@ -332,6 +350,18 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     fragmentShader: `varying vec2 vUv; uniform float time; uniform float opacity; void main(){float edge=pow(abs(vUv.x-.5)*2.,7.)+pow(abs(vUv.y-.5)*2.,7.);float scan=pow(.5+.5*sin(vUv.y*70.-time*1.7),20.);float weave=pow(.5+.5*sin((vUv.x+vUv.y)*55.),25.)*.14;gl_FragColor=vec4(.39,.56,1.,opacity*(.14+edge*.7+scan*.22+weave));}`
   }));
   const barrier = mesh(geo(new THREE.PlaneGeometry(8.8, 5.4)), gateMaterial, gate); barrier.position.y = 2.7;
+  const sanctuarySeals = [];
+  for (const seal of layout.barriers || []) {
+    const height = Math.max(0.1, seal.height - (seal.y || 0));
+    const side = seal.depth > seal.width, width = side ? seal.depth : seal.width;
+    const pane = mesh(geo(new THREE.PlaneGeometry(width, height)), gateMaterial);
+    pane.position.set(seal.x, (seal.y || 0) + height / 2, seal.z); if (side) pane.rotation.y = Math.PI / 2;
+    const frameMaterial = glow(COLORS.violet, 0.18);
+    const frame = mesh(geo(new THREE.BoxGeometry(seal.width, .035, seal.depth)), frameMaterial); frame.position.set(seal.x, seal.height, seal.z);
+    const proxy = mesh(geo(new THREE.BoxGeometry(seal.width, height, seal.depth)), cameraProxyMaterial);
+    proxy.position.copy(pane.position); proxy.visible = false; proxy.updateMatrixWorld(); occluders.push(proxy);
+    sanctuarySeals.push({pane,frame,proxy});
+  }
   const gateSeals = [];
   for (const [i, def] of conduitDefs.entries()) {
     const seal = new THREE.Group(); seal.position.set(def.points[def.points.length - 1][0], 4.5, 0.3); gate.add(seal);
@@ -364,10 +394,9 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     const halo = floorRing(group, 0.46, glow(COLORS.gold, 0.25), 0.06);
     secrets.set(item.id, { group, gem, halo });
   }
-  const guide = positioned('guide');
-  const guideRing = floorRing(guide, 1.25, cyan, 0.055);
-  const guideGem = mesh(octa, cyan, guide); guideGem.scale.set(0.32, 0.55, 0.32); guideGem.position.y = 1.65;
-  const guideSatellites = [pink, blue, gold].map((mat, i) => ball(guide, Math.cos(i * Math.PI * 2 / 3) * 0.82, 1.65, Math.sin(i * Math.PI * 2 / 3) * 0.82, 0.12, mat));
+  const chargeView = createChargeView(root, coarse);
+  const guide = createLumaGuide(root, layout, camera);
+  const rewards = createWorldRewards(root, layout, coarse);
 
   // One soft contact decal anchors Gizmo even when the mobile shadow map is disabled.
   const contactPixels = new Uint8Array(96 * 96 * 4);
@@ -386,10 +415,11 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
   contactShadow.name = 'Gizmo ground contact';
   contactShadow.renderOrder = -1;
   const contactNormal = new THREE.Vector3(), planeNormal = new THREE.Vector3(0, 0, 1);
-  function contactFloor(x, z) {
+  function contactFloor(x, z, state) {
     let height = 0;
     contactNormal.set(0, 1, 0);
     for (const surface of layout.surfaces || []) {
+      if (surface.requires && !state.missions?.[surface.requires]) continue;
       if (Math.abs(x - surface.x) > surface.width / 2 + 0.001 || Math.abs(z - surface.z) > surface.depth / 2 + 0.001) continue;
       let y = surface.height || 0, slopeX = 0, slopeZ = 0;
       if (surface.type === 'ramp') {
@@ -437,7 +467,7 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     gateMaterial.uniforms.time.value = t;
     for (const [id, value] of interactableRings) {
       const selected = activeId === id;
-      value.ring.material.opacity = selected ? 0.88 : 0.20;
+      value.ring.material.opacity = selected ? 0.82 : 0.08;
       value.ring.material.color.setHex(selected ? COLORS.gold : COLORS.cyan);
       value.ring.scale.setScalar(selected ? 1 + Math.sin(t * 4) * 0.035 : 1);
       const jelly = state.jellies?.[id], battery = state.batteries?.[id];
@@ -513,10 +543,12 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     beatLamps.forEach((lamp, i) => { lamp.material.opacity = i < (engine.beats || 0) ? 1 : 0.16; lamp.material.color.setHex(i < (engine.beats || 0) ? 0x93ffe3 : COLORS.gold); });
     wheel.rotation.z += dt * (engineDone ? 1.25 : engine.started ? 0.35 : 0.06);
     engineRings.forEach((value, i) => { value.rotation.y = Math.sin(t * (engineDone ? 1 : 0.25) + i) * (engineDone ? 0.8 : 0.2); value.material.opacity = engineDone ? 0.7 : 0.22; });
-    engineLight.intensity = engineDone ? 70 : engine.started ? 25 : 13;
+    engineLight.intensity = engineDone ? 24 : engine.started ? 18 : 10;
+    conservatoryLight.intensity = missions.jellies ? 20 : 13;
     gateAmount = THREE.MathUtils.damp(gateAmount, state.gateOpen || missions.completed ? 1 : 0, 2.5, dt);
     gateMaterial.uniforms.opacity.value = (1 - gateAmount) * 0.6;
     barrier.visible = gateAmount < 0.99;
+    sanctuarySeals.forEach(({pane,frame,proxy}) => { pane.visible = frame.visible = gateAmount < .99; frame.material.opacity = (1 - gateAmount) * .18; proxy.layers.set(state.gateOpen ? 1 : 0); });
     gateSeals.forEach(seal => { seal.material.opacity = missions[seal.id] ? 1 : 0.23; seal.outer.scale.setScalar(missions[seal.id] ? 1 + Math.sin(t * 1.5) * 0.025 : 1); });
     heart.rotation.y = t * 0.38;
     heart.position.y = 1.75 + Math.sin(t * 1.4) * 0.15;
@@ -530,7 +562,8 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
       secret.gem.position.y = 0.83 + Math.sin(t * 2 + secret.group.position.x) * 0.08;
     }
     const player = state.player || { x: 0, y: 0, z: 14, yaw: 0 };
-    const groundHeight = contactFloor(player.x, player.z);
+    const groundHeight = state.transport ? player.y : contactFloor(player.x, player.z, state);
+    if (state.transport) contactNormal.set(0, 1, 0);
     const airborneHeight = Math.max(0, player.y - groundHeight);
     contactShadow.position.set(player.x, groundHeight + 0.03, player.z);
     contactShadow.quaternion.setFromUnitVectors(planeNormal, contactNormal);
@@ -555,9 +588,8 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     echoCrown.visible = found.length === 6;
     echoCrown.rotation.z = t * 0.08;
     echoCrown.scale.setScalar(1 + Math.sin(t * 0.8) * 0.06);
-    guideGem.rotation.y = t * 0.35; guideGem.position.y = 1.65 + Math.sin(t * 1.7) * 0.10;
-    guideRing.material.opacity = 0.75;
-    guideSatellites.forEach((value, i) => { const angle = i * Math.PI * 2 / 3 + t * 0.25; value.position.x = Math.cos(angle) * 0.82; value.position.z = Math.sin(angle) * 0.82; });
+    chargeView.update(t, state); guide.update(t, dt, state); rewards.update(t, dt, state);
+    conditionalProxies.forEach(({proxy,requires}) => proxy.layers.set(missions[requires] ? 0 : 1));
     for (let i = 0; i < moteCount; i++) {
       const base = moteBase[i]; moteData[i * 3] = base.x + Math.sin(t * 0.17 + base.phase) * 0.8;
       moteData[i * 3 + 1] = base.y + Math.sin(t * 0.3 + base.phase) * 0.35;
@@ -581,6 +613,7 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
   }
 
   function dispose() {
+    chargeView.dispose(); guide.dispose(); rewards.dispose();
     scene.remove(root);
     scene.background = previous.background; scene.fog = previous.fog; scene.environment = previous.environment;
     environmentTarget?.dispose();
@@ -596,5 +629,5 @@ export async function createNeonScene({ scene, renderer, layout, coarse = false 
     resources.forEach(value => value.dispose?.());
     key.shadow.map?.dispose();
   }
-  return { update, occluders, dispose, group: root };
+  return { update, occluders, dispose, group: root, get guidance() { return {...guide.group.userData}; }, demonstrate: id => guide.demonstrate(id), handleEvents(events) { guide.handleEvents(events); rewards.handleEvents(events); } };
 }

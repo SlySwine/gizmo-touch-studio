@@ -18,7 +18,7 @@ export function createCameraRig(camera,occluders){
   return {
     target,
     update(player,orbit,dt,snap=false){
-      target.set(player.x,player.y+1,player.z);
+      target.set(player.x,player.y+2,player.z);
       const distance=orbit.distance*(camera.aspect<.8?1.2:1);
       wanted.set(Math.sin(orbit.yaw)*Math.cos(orbit.pitch)*distance,Math.sin(orbit.pitch)*distance,Math.cos(orbit.yaw)*Math.cos(orbit.pitch)*distance).add(target);
       safe(wanted);

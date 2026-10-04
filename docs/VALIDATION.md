@@ -1,30 +1,43 @@
 # Neon Wilds validation
 
-This is a bounded audit of the preview, not a claim of exhaustive testing or evidence from an actual child.
+This records the bounded audit of the sanctuary polish preview. It does not establish exhaustive testing or uncoached discovery by a child.
 
-## Automated model and camera checks
+## Repository checks
 
-Run `node --test scripts/test-neon-*.mjs` (23 checks) and `node scripts/validate-site.mjs`.
+`node --test scripts/test-neon-*.mjs` passes **39 tests**: 34 model, three camera and two audio lifecycle tests. `node scripts/validate-site.mjs` checks JavaScript syntax, 40 local references, both self-contained GLBs, Studio toolbar order and the shared Blender/model layout hash. `git diff --check` passes.
 
-Coverage includes all six quest orders through ordinary model movement, every secret, both raised garden ramps, jumps and deck edges, locked Spire protection, sliding collision, world bounds, safe checkpoints, save validation, recovery with cargo/followers, frame-rate consistency, close-wall camera recovery and 1,200 repeated orbit transitions. Independent review additionally fuzzed 1,000 malformed saves through 35,000 movement steps.
+Model coverage includes all six quest orders, every echo, ordinary movement, collision and bounds, ramps and deck edges, safe checkpoints, recovery with cargo/followers, save sanitation and older version-one saves. Charged flight predictions match actual unsteered releases near walls, bounds, gates and raised surfaces at 30, 60, 120 and 144 Hz. Holding a charge keeps the world clock and companions moving. Repeated input stress exercises 18,000 charged-flight/cancel frames. Visible Spire seals prevent charge-assisted progression skips.
 
-## Browser playthroughs
+Both transport routes run in both directions; early/late step-off, reload during a ride and safe recovery preserve progress. The lift rises clear of its terrace wall before moving across. Tests cover the conditional prism crossing, all three route petals, the garden interaction and optional airborne chimes. Audio tests verify suspended contexts disconnect current and scheduled voices, avoiding stale sounds on resume. These do not verify audible quality.
 
-The authoring audit used isolated Chrome sessions and normal keyboard, pointer and touch inputs. Read-only state observations verified outcomes; the journeys did not teleport or inject completion.
+## Browser play and visual review
 
-| Pass | Checks | Coverage |
-| --- | --- | --- |
-| Desktop journey | 22 | Engine first, gold cell first, wrong socket, intentionally missed pulse, full group escort, mirror routing, ramp/finale, mid-quest and completion reloads |
-| Controls and visual failures | 18 | Input cancellation, collisions, boundaries, recovery, hop, eight reviewed camera angles, touch, portrait and landscape |
-| Touch journey | 19 | Different district order, all three quests/finale, every echo and raised garden, reload |
-| Studio bridge and backups | 21 | Actual grooming transfer, reset, two-way sound preference, paused hidden simulation, round trip, history, restart/restore and storage quota failure |
-| Final camera and focus regression | 8 | Default camera composition, pointer-button focus returning to movement, Space hopping without repeating actions, native Tab/Space button activation |
-| Original Studio regression | 41 | Poke, Pull, Brush, hat/Turn behavior, cancellation, finite deformation and touch |
+Isolated installed Chrome sessions used ordinary keyboard, pointer and touch-emulated inputs. Read-only state observations verified outcomes. No playthrough teleported Gizmo or injected quest completion. Authored route knowledge was used.
 
-No runtime or missing-asset errors remained in these sessions. Images and detailed reports are retained in the authoring workspace's `qa` directory. Physical phones, older hardware, Safari, Firefox, gamepads and screen-reader-only completion remain unverified. Headless audio state was checked, not audible sound quality. The reviewer knew the layout and followed planned waypoints, so this establishes playability and recovery, not uncoached discovery or enjoyment.
+| Pass | Checks passed | Scope |
+| --- | ---: | --- |
+| Fresh touch journey | 30 | All three missions, ferry, prism crossing, lift in both directions, garden, Spire finale, partial/completion reloads and predicted landing |
+| Desktop mission segments | 15 + 13 | Jellyfish escort and prisms with their routes; separate fresh Engine segment with wrong socket, mistimed pulse, live clock during charge and two-way lift |
+| Controls | 31 | Repeated charge/release, Escape, blur, map, reload, outside-button release, touch cancel, two-thumb aiming, resize, boundaries and recovery |
+| Desktop exploration | 14 | Continued an exact save earned by touch play; all six echoes, four chimes/Moontrail, early/late ferry step-off and completion reload |
+| Studio bridge and backup | 21 | Actual brush transfer, reset, two-way sound preference, hidden simulation pause, history, position retention, new journey/restore and injected storage quota failure |
+| Final targeted regression | 11 | Portrait introduction/charge, world time during hold, foliage camera, automatic ferry view, manual camera override, restart/restore transient state |
+| Isolated character | 11 | 12,000 animation steps, repeated squash/release/cancel, finite poses at 20/60/144 Hz, hat/body clearance, preserved grooming and shader/runtime errors |
 
-## What the audit improved
+The first desktop route stopped after its 15 passing observations because its scripted waypoint intersected a real obstacle. The driver was corrected; a separate fresh Engine segment covered the remaining desktop controls. This is not described as one uninterrupted desktop completion. Earlier exploration attempts similarly exposed route-driver tolerance errors. The initial Studio check read grooming before the asynchronous frame handoff; the final regression waits for the accepted groom revision. The final completed sessions had no runtime or missing-asset errors.
 
-The audit caught a wall camera that still clipped despite a passing distance metric, stale timing HUD fields, misleading cell guidance, keyboard focus loss after buttons, completed objectives remaining tracked, duplicate touch hints, and restart backup issues. Repairs were followed by targeted regression and visual retests. Close-wall camera now moves overhead to keep Gizmo visible. A successful backup is required before restarting, and Previous journey visibly restores it.
+Numeric camera checks alone missed foreground foliage hiding Gizmo. Fresh pixel review verified the taller camera obstruction envelopes keep him visible. Other review fixes included a cropped portrait bounce demonstration, camera framing with too much empty floor, nursery clipping, ride companion overlap, a weak garden payoff, stale introduction after restore, old audio tails after suspension and leftover ferry camera state. Automatic arrival framing was separately tested without manual camera input.
 
-The game is a compact, forgiving exploration puzzle. The next useful playtest is an uncoached session with the intended players to assess pacing and clue clarity. The live Studio and production deployment remain unchanged until approval and merge.
+Actual final browser views:
+
+- [Sanctuary and blooming garden](previews/neon-sanctuary.png)
+- [Automatic jellyfish-ferry arrival](previews/neon-ferry.png)
+- [Fresh portrait introduction](previews/neon-touch.png)
+
+Detailed reports, routes, failed driver attempts and additional screenshots remain in the authoring workspace's `qa` directory. Earlier Studio-only regression passed 41 checks; this polish pass leaves its interaction implementation unchanged and repeats the 21 integration/backup checks above.
+
+## Limits
+
+Physical phones, older hardware, Safari, Firefox, gamepads and screen-reader-only completion remain unverified. Touch results are Chrome emulation. Headless audio lifecycle was tested; sound was not assessed by listening. The game uses the actual Astra mesh with a lower-cost fur approximation, not the Blender render's full hair system. The new static Blender world is 9,525,132 bytes, 273,484 triangles and 21 material batches before dynamic props.
+
+The next useful acceptance test is an uncoached session with the intended players to assess clue clarity and pacing. This remains a draft preview. The live Studio and production deployment are unchanged until approval and merge.

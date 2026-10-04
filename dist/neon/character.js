@@ -8,7 +8,8 @@ const clamp = THREE.MathUtils.clamp;
 const finite = (value, fallback = 0) => Number.isFinite(value) ? value : fallback;
 
 /** Original Astra mesh, in metres. The returned group's origin is Gizmo's feet.
- * +Z is forward. update accepts {player:{x,y,z,vx,vy,vz,yaw,grounded},camera}.
+ * +Z is forward. update accepts {player:{x,y,z,vx,vy,vz,yaw,grounded},
+ * charge:{active,power},reaction,camera}. Animation never changes model physics.
  * Groom arrays use the original GLB's body-local coordinates, before SCALE.
  */
 export async function createNeonCharacter({ scene, coarse = false } = {}) {
@@ -51,6 +52,30 @@ export async function createNeonCharacter({ scene, coarse = false } = {}) {
   });
   if (!body) throw new Error('The original Gizmo mesh is missing its Body.');
   const contact = createHatContactMap(hats);
+  // A soft hat follows the crown but resists most of the body's squash. The fur
+  // samples this same live transform, so rebound cannot expose an old bald patch
+  // or send hairs through the brim when the silhouette widens.
+  const hatPivot = new THREE.Group();
+  hatPivot.name = 'Soft bowler suspension';
+  const brim = hats.find(mesh => mesh.name === 'HatBrim');
+  brim?.geometry.computeBoundingBox();
+  const hatAnchor = brim ? brim.geometry.boundingBox.getCenter(new THREE.Vector3()) : contact.center.clone();
+  hatAnchor.add(HAT_OFFSET);
+  // Resisting compression around the lowest brim edge keeps the crown above
+  // the expanding lobe. A centre pivot would push its near edge into the body.
+  if (brim) hatAnchor.y = brim.geometry.boundingBox.min.y + HAT_OFFSET.y;
+  hatPivot.position.copy(hatAnchor);
+  rig.add(hatPivot);
+  for (const hat of hats) {
+    hat.position.sub(hatAnchor);
+    hatPivot.add(hat);
+  }
+  const hatRest = new THREE.Matrix4().makeTranslation(HAT_OFFSET.x - hatAnchor.x, HAT_OFFSET.y - hatAnchor.y, HAT_OFFSET.z - hatAnchor.z);
+  const support = [];
+  const bodyPositions = body.geometry.attributes.position;
+  for (let i = 0; i < bodyPositions.count; i++) {
+    if (bodyPositions.getY(i) < .6) support.push(bodyPositions.getX(i), bodyPositions.getY(i) + rig.position.y, bodyPositions.getZ(i));
+  }
   const outerCount = coarse ? 20000 : 30000;
   const innerCount = coarse ? 32000 : 48000;
   const samples = sampleSurface(body.geometry, outerCount + innerCount);
@@ -59,11 +84,14 @@ export async function createNeonCharacter({ scene, coarse = false } = {}) {
     wind: { value: new THREE.Vector3() },
     clock: { value: 0 },
     mood: { value: new THREE.Vector2() },
+    energy: { value: 0 },
+    localFloor: { value: new THREE.Vector4(0, SCALE, 0, SCALE * rig.position.y) },
     hatContactMap: { value: contact.texture },
     hatContactBounds: { value: contact.bounds },
     hatHeightRange: { value: contact.heightRange },
     hatCenter: { value: contact.center },
-    hatOffset: { value: HAT_OFFSET },
+    hatToRig: { value: new THREE.Matrix4().makeTranslation(...HAT_OFFSET.toArray()) },
+    rigToHat: { value: new THREE.Matrix4().makeTranslation(...HAT_OFFSET.clone().negate().toArray()) },
   };
   const material = new THREE.ShaderMaterial({
     name: 'Gizmo · velvet fleece and groomed guard hairs',
@@ -80,6 +108,9 @@ export async function createNeonCharacter({ scene, coarse = false } = {}) {
   let disposed = false, squash = 0, squashVelocity = 0, lastGrounded = true;
   let lastVy = 0, blinkAt = 2.8, blinkStart = -100, surprise = 0, pleased = 0;
   let gait = 0, lastReaction = null, groomRevision = 0;
+  let wasCharging = false, heldPower = 0, focus = 0, rebound = 0;
+  let hatLift = 0, hatVelocity = 0, hatRock = 0, hatRockVelocity = 0;
+  let currentHeight = 1;
   const cameraPosition = new THREE.Vector3();
   const localVelocity = new THREE.Vector3();
   const inverse = new THREE.Quaternion();
@@ -90,55 +121,112 @@ export async function createNeonCharacter({ scene, coarse = false } = {}) {
     dt = clamp(finite(dt), 0, .05);
     time = finite(time);
     const vx = finite(p.vx), vy = finite(p.vy), vz = finite(p.vz);
-    const speed = Math.hypot(vx, vz);
+    const speed = Math.min(35, Math.hypot(vx, vz));
     const grounded = p.grounded !== false;
+    const charging = Boolean(state.charge?.active) && grounded;
+    const power = clamp(finite(state.charge?.power), 0, 1);
     group.position.set(finite(p.x, group.position.x), finite(p.y, group.position.y), finite(p.z, group.position.z));
     const yaw = finite(p.yaw, speed > .03 ? Math.atan2(vx, vz) : group.rotation.y);
     const yawDifference = Math.atan2(Math.sin(yaw - group.rotation.y), Math.cos(yaw - group.rotation.y));
     group.rotation.y += yawDifference * (1 - Math.exp(-dt * 13));
 
-    if (grounded && !lastGrounded) {
-      squashVelocity -= Math.min(2.4, Math.abs(lastVy) * .25 + .4);
+    const landed = grounded && !lastGrounded;
+    const launched = !grounded && lastGrounded && vy > 1;
+    if (landed) {
+      const impact = Math.min(3.1, Math.abs(lastVy) * .27 + .5);
+      squashVelocity -= impact;
+      hatVelocity += impact * .24;
+      hatRockVelocity -= impact * .075;
+      rebound = Math.max(rebound, impact * .22);
       surprise = Math.max(surprise, .45);
     }
-    if (!grounded && lastGrounded && vy > 1) { squashVelocity += 1.05; surprise = .85; }
+    if (launched) {
+      squashVelocity += wasCharging ? 3.6 + heldPower * 2 : 1.05;
+      hatVelocity += wasCharging ? .35 + heldPower * .5 : .12;
+      hatRockVelocity += wasCharging ? .17 + heldPower * .15 : .08;
+      rebound = Math.max(rebound, wasCharging ? .45 + heldPower * .55 : .25);
+      surprise = wasCharging ? 1 : .85;
+    }
     lastGrounded = grounded;
     lastVy = vy;
     const reaction = state.reaction || p.reaction;
     const reactionId = reaction?.id ?? reaction?.at ?? reaction;
     if (reaction && reactionId !== lastReaction) {
       lastReaction = reactionId;
-      if (reaction.kind === 'brush' || reaction.kind === 'success') pleased = 1;
-      else { surprise = 1; squashVelocity -= .7; }
+      if (['brush', 'success', 'chime', 'garden-awake'].includes(reaction.kind)) {
+        pleased = 1;
+        if (reaction.kind === 'chime' || reaction.kind === 'garden-awake') {
+          squashVelocity += .75;
+          hatRockVelocity += .14;
+        }
+      } else if (reaction.kind === 'charge-release') {
+        // The public model sends this with the upward velocity in the same step.
+        // Do not apply a second impulse after detecting that launch above.
+        surprise = 1;
+      } else if (reaction.kind !== 'charge-cancel') { surprise = 1; squashVelocity -= .7; }
     }
-    // The damped vertical spring preserves volume and never drives a negative scale.
-    squashVelocity += (-squash * 110 - squashVelocity * 11) * dt;
-    squash = clamp(squash + squashVelocity * dt, -.23, .18);
+    if (charging) heldPower = power;
+    wasCharging = charging;
+    focus += ((charging ? power : 0) - focus) * (1 - Math.exp(-dt * 12));
+    rebound *= Math.exp(-dt * 4);
+    const target = charging ? -.08 - power * .32 : 0;
+    // Substeps give the same damped, volume-preserving response at low frame
+    // rates. Cancel eases upright; only an actual launch adds a release impulse.
+    const steps = Math.max(1, Math.ceil(dt * 120)), h = dt / steps;
+    for (let i = 0; i < steps; i++) {
+      squashVelocity += ((target - squash) * 112 - squashVelocity * (charging ? 19 : 8.5)) * h;
+      squashVelocity = clamp(squashVelocity, -5.5, 5.5);
+      squash = clamp(squash + squashVelocity * h, -.44, .27);
+      if (squash <= -.44 && squashVelocity < 0 || squash >= .27 && squashVelocity > 0) squashVelocity = 0;
+      hatVelocity += (-hatLift * 95 - hatVelocity * 10) * h;
+      hatLift = clamp(hatLift + hatVelocity * h, 0, .15);
+      if (hatLift === 0 && hatVelocity < 0) hatVelocity = 0;
+      hatRockVelocity += (-hatRock * 95 - hatRockVelocity * 8) * h;
+      hatRock = clamp(hatRock + hatRockVelocity * h, -.055, .055);
+    }
     gait += speed * dt * 2.8;
     const running = clamp(speed / 5, 0, 1);
-    const step = grounded ? Math.sin(gait * 2) * running : 0;
-    const height = 1 + squash + step * .025;
-    spring.scale.set(SCALE / Math.sqrt(height), SCALE * height, SCALE / Math.sqrt(height));
-    spring.position.y = grounded ? Math.abs(Math.sin(gait)) * .035 * running : 0;
-    spring.rotation.z = Math.sin(gait) * .055 * running;
-    spring.rotation.x = -.07 * running + clamp(vy * -.009, -.045, .045);
+    const step = grounded && !charging ? Math.sin(gait * 2) * running : 0;
+    const tension = charging ? Math.sin(time * (25 + power * 8)) * .003 * power : 0;
+    const height = clamp(1 + squash + step * .025 + tension, .56, 1.3);
+    currentHeight = height;
+    const width = 1 / Math.sqrt(height);
+    spring.scale.set(SCALE * width, SCALE * height, SCALE * width);
+    spring.rotation.z = (charging ? Math.sin(time * 31) * .003 * power : Math.sin(gait) * .055 * running);
+    spring.rotation.x = charging ? -.012 * power : -.07 * running + clamp(vy * -.009, -.045, .045);
+    spring.updateMatrix();
+    const m = spring.matrix.elements;
+    let lowest = Infinity;
+    for (let i = 0; i < support.length; i += 3) lowest = Math.min(lowest, m[1] * support[i] + m[5] * support[i + 1] + m[9] * support[i + 2]);
+    spring.position.y = Math.max(0, .012 - lowest) + (grounded && !charging ? Math.abs(Math.sin(gait)) * .025 * running : 0);
+    uniforms.localFloor.value.set(m[1], m[5], m[9], spring.position.y + m[5] * rig.position.y);
+    hatPivot.position.copy(hatAnchor);
+    hatPivot.position.y += hatLift;
+    hatPivot.rotation.z = hatRock;
+    hatPivot.rotation.x = hatRock * -.45;
+    hatPivot.scale.set(Math.pow(width, -.7), Math.pow(height, -.7), Math.pow(width, -.7));
+    hatPivot.updateMatrix();
+    uniforms.hatToRig.value.multiplyMatrices(hatPivot.matrix, hatRest);
+    uniforms.rigToHat.value.copy(uniforms.hatToRig.value).invert();
 
     if (time > blinkAt) { blinkStart = time; blinkAt = time + 3.4 + Math.sin(time * 7.3) * 1.1; }
     const blinkPhase = clamp((time - blinkStart) / .2, 0, 1);
-    const blink = Math.sin(blinkPhase * Math.PI) ** 2;
+    const blink = Math.max(Math.sin(blinkPhase * Math.PI) ** 2, focus * .28);
     surprise *= Math.exp(-dt * 3.4);
     pleased *= Math.exp(-dt * .8);
     for (const eye of eyes) {
       const dictionary = eye.morphTargetDictionary, values = eye.morphTargetInfluences;
       if (!dictionary || !values) continue;
-      for (const [name, value] of [['Blink', eye.name.includes('Pupil') ? blink : 0], ['Surprised', surprise * .75], ['Smug', pleased * .65], ['Skeptical', 0]]) {
+      for (const [name, value] of [['Blink', eye.name.includes('Pupil') ? blink : 0], ['Surprised', surprise * .75], ['Smug', Math.max(pleased * .65, focus * .13)], ['Skeptical', 0]]) {
         if (dictionary[name] !== undefined) values[dictionary[name]] = value;
       }
     }
     uniforms.clock.value = time;
     uniforms.mood.value.set(surprise * .75, blink);
+    uniforms.energy.value = Math.min(1, focus * .25 + rebound);
     inverse.copy(group.quaternion).invert();
     localVelocity.set(vx, vy * .3, vz).applyQuaternion(inverse).multiplyScalar(-.009);
+    localVelocity.clampLength(0, .18);
     uniforms.wind.value.lerp(localVelocity, 1 - Math.exp(-dt * 9));
     if (state.camera?.isCamera) {
       group.updateWorldMatrix(true, true);
@@ -210,7 +298,7 @@ export async function createNeonCharacter({ scene, coarse = false } = {}) {
     grain.dispose();
     contact.texture.dispose();
   }
-  return { group, update, setGroom, dispose, get state() { return { outerCount: outer.geometry.instanceCount, undercoatCount: innerCount, groomRevision, height: 1.61, forward: '+z', disposed }; } };
+  return { group, update, setGroom, dispose, get state() { return { outerCount: outer.geometry.instanceCount, undercoatCount: innerCount, groomRevision, height: 1.61, forward: '+z', disposed, animation: { charging: wasCharging, compression: currentHeight, focus, rebound, hatLift } }; } };
 }
 
 function createGrain() {
@@ -282,8 +370,9 @@ const furVertex = `
 attribute vec3 root; attribute vec3 hairNormal; attribute vec3 groom;
 attribute float seed; attribute float coat;
 uniform vec3 localCamera; uniform vec3 wind; uniform float clock; uniform vec2 mood;
+uniform float energy; uniform vec4 localFloor;
 uniform sampler2D hatContactMap; uniform vec4 hatContactBounds;
-uniform vec2 hatHeightRange; uniform vec3 hatCenter; uniform vec3 hatOffset;
+uniform vec2 hatHeightRange; uniform vec3 hatCenter; uniform mat4 hatToRig; uniform mat4 rigToHat;
 varying vec3 vColor;
 float eyeDistance(vec3 p) {
   float browY=2.465+mood.x*.22;
@@ -312,20 +401,29 @@ void main() {
   float laid=clamp(length(styling)*3.4,0.0,.75);
   float angle=seed*62.83;
   vec3 curl=(tangent*cos(angle)+bitangent*sin(angle))*mix(.045+seed*.038,.015+seed*.018,coat);
-  vec3 hatRoot=root-hatOffset;
+  vec3 hatRoot=(rigToHat*vec4(root,1.0)).xyz;
   vec3 contact=hatSurface(hatRoot);
   float pressure=contact.z*(1.0-smoothstep(.015,.28,contact.x-hatRoot.y));
   vec3 outward=normalize(vec3(hatRoot.x-hatCenter.x,0.0,hatRoot.z-hatCenter.z)+vec3(.0001,0,.0001));
+  outward=normalize(mat3(hatToRig)*outward);
   outward=normalize(outward-n*dot(outward,n)+vec3(.0001));
-  vec3 flutter=tangent*sin(clock*3.8+seed*23.0)*.006;
+  vec3 flutter=tangent*sin(clock*(3.8+energy*7.0)+seed*23.0)*(.006+energy*.021);
   vec3 inertia=wind-n*dot(n,wind);
   vec3 bend=(curl+vec3(0,-lengthHair*.2,0))*mix(1.0,.3,pressure)+(styling+(inertia+flutter)*mix(1.0,.15,coat))*trim+outward*lengthHair*pressure*.92;
   vec3 p=root+n*(.008+lengthHair*t*(1.0-laid)*(1.0-pressure*.94))+bend*t*t;
   vec3 side=normalize(cross(n+styling*6.0+outward*pressure,viewDir)+vec3(.0001));
   p+=side*position.x*mix(.007+seed*.003,.013+seed*.007,coat)*(1.0-t*.94);
   if(p.z>1.0&&eyeDistance(p)<.005) p.z=min(p.z,1.145);
-  vec3 ceiling=hatSurface(p-hatOffset);
-  if(ceiling.y>.5) p.y=min(p.y,ceiling.x+hatOffset.y-.022);
+  vec3 hatPoint=(rigToHat*vec4(p,1.0)).xyz;
+  vec3 ceiling=hatSurface(hatPoint);
+  if(ceiling.y>.5&&hatPoint.y>ceiling.x-.022) {
+    hatPoint.y=ceiling.x-.022;
+    p=(hatToRig*vec4(hatPoint,1.0)).xyz;
+  }
+  // Keep the lowest pile above the current foot plane even during a deep squash
+  // or a rolling landing. This plane moves with Gizmo on raised paths and rides.
+  float floorDistance=dot(localFloor.xyz,p)+localFloor.w;
+  if(floorDistance<.006) p+=localFloor.xyz*((.006-floorDistance)/dot(localFloor.xyz,localFloor.xyz));
   vec3 worldP=(modelMatrix*vec4(p,1.0)).xyz;
   vec3 N=normalize(mat3(modelMatrix)*n);
   vec3 V=normalize(cameraPosition-worldP);
