@@ -6,7 +6,8 @@ const STEP = 1 / 120;
 const near = (a, b, message = '') => assert(Math.abs(a - b) < 1e-7, message + ': ' + a + ' != ' + b);
 const activated = events => events.filter(e => e.type === 'target' && e.status === 'activated');
 
-// Reproducible public-input solutions; useful for calibrating real pointer browser QA.
+// Flight fixtures for prediction and advanced mission completion. The first two
+// realms use the resting beginner journeys below for full-play acceptance.
 // Each tuple is raw drag x, raw drag y, then seconds of unheld simulation.
 export const SOLUTION_ROUTES = [
   [[-1.8845367727011784,-.9006410256410258,.6],[-2.0063802481516917,-.525641025641025,1],[-2.0610460479186523,-.3630536130536125,1.1],[-.9344588202822665,-.5761217948717949,1.6]],
@@ -32,10 +33,61 @@ function flyTo(model, x, y, seconds) {
   const vy = (y - s.position.y + l.gravity * STEP ** 2 * n * (n + 1) / 2) / (n * STEP);
   return launch(model, -vx / l.launchGain, (3 - vy) / l.launchGain, seconds);
 }
+// Beginner acceptance: every shot starts resting on a visible platform. These arcs
+// use its current center (not a future-phase oracle), then allow natural settling.
+export const BEGINNER_ROUTES = [
+  Array.from({length:7},(_,i)=>({duration:1.4,wait:i===4?1.5:0})),
+  [1.4,1.4,1.3,1.4,1.4,1.5,1.4].map((duration,i)=>({duration,wait:i===2?2.25:i===5?.5:0})),
+];
+function beginnerJourney(model, scale = () => 1) {
+  const events=[];
+  function settle(checkpoint) {
+    for(let tick=0;tick<720;tick++) {
+      const s=model.state;assert.equal(s.rescues,0,'A forgiving beginner journey should not require a rescue');
+      if(s.grounded&&s.checkpoint===checkpoint&&Math.abs(s.velocity.x)<.05)return;
+      events.push(...model.step(STEP));
+    }
+    assert.fail('Gizmo did not settle on platform '+checkpoint);
+  }
+  for(const [index,shot] of BEGINNER_ROUTES[model.state.levelIndex].entries()) {
+    const destination=index+1;settle(index);events.push(...advance(model,shot.wait));
+    const s=model.state,l=model.layout,p=s.islands[destination],n=Math.round(shot.duration/STEP),r=Math.exp(-l.airDrag*STEP);
+    const vx=(p.x-s.position.x)*(1-r)/(STEP*r*(1-r**n));
+    const vy=(p.y+l.halfHeight-s.position.y+l.gravity*STEP**2*n*(n+1)/2)/(n*STEP);
+    const variation=scale(index), sx=typeof variation==='number'?variation:variation.x, sy=typeof variation==='number'?variation:variation.y;
+    model.dispatch({type:'aim',x:-vx/l.launchGain*sx,y:(3-vy)/l.launchGain*sy});
+    // Like a player watching the live guide, wait for the moving hazard to clear.
+    // Hardcoded launch timestamps are brittle when softer landings settle sooner.
+    let clear=false;
+    for(let tick=0;tick<150;tick++) {
+      const outcome=model.predict().outcome;
+      if(outcome.type==='landing'&&outcome.platformId===destination){clear=true;break;}
+      events.push(...advance(model,.1));
+    }
+    assert(clear,'A beginner platform arc needs a reachable clear timing window');
+    events.push(...model.dispatch({type:'release'}));settle(destination);
+    const target=l.mission.targets.find(t=>Math.abs(t.x-p.x)<.1);
+    if(target&&!model.state.mission.targets.find(t=>t.id===target.id).completed) {
+      events.push(...model.dispatch({type:'poke',direction:target.x<model.state.position.x?-1:1}));settle(destination);
+    }
+  }
+  return events;
+}
 function finite(state) {
   for (const n of [state.position.x,state.position.y,state.velocity.x,state.velocity.y,state.elapsed]) assert(Number.isFinite(n));
   assert(Math.hypot(state.velocity.x,state.velocity.y) <= GARDEN.maxSpeed + 1e-7);
 }
+
+test('aiming keeps the active realm clock, hazards, and platforms moving', () => {
+  const model = createGardenModel();
+  model.dispatch({ type: 'aim', x: -.8, y: -.6 });
+  const before = model.state;
+  model.step(.5);
+  assert(model.state.elapsed > before.elapsed, 'The realm clock froze while Pull was held');
+  assert.notDeepEqual(model.state.hazards, before.hazards, 'Moving hazards froze while Pull was held');
+  assert.notDeepEqual(model.state.islands, before.islands, 'Moving platforms froze while Pull was held');
+  assert.deepEqual(model.state.position, before.position, 'A grounded stationary hold should keep its anchor');
+});
 
 test('mission catalog is deeply immutable, distinct, and contains no collectible completion', () => {
   assert.equal(GARDEN, LEVELS[0]); assert.equal(LEVELS.length, 5);
@@ -69,12 +121,58 @@ test('stronger pull and slap increase motion; drag and velocity remain capped', 
   near(Math.hypot(m.state.aim.x,m.state.aim.y),2.6); m.dispatch({type:'release'}); finite(m.state);
   assert.deepEqual(m.dispatch({type:'release'}),[]); assert.equal(m.state.launches,1);
 });
-test('holding pauses flight and mission phase, and cancel resumes without launch', () => {
+test('holding anchors flight while the world advances, and cancel resumes without launch', () => {
   const m = createGardenModel(3); launch(m,-.7,-.6,.2); const moving=m.state;
-  m.dispatch({type:'aim',x:-1,y:-1}); const paused=m.state; advance(m,5); assert.deepEqual(m.state,paused);
+  m.dispatch({type:'aim',x:-1,y:-1}); const paused=m.state; advance(m,5); assert.deepEqual(m.state.position,paused.position);
+  near(m.state.elapsed,paused.elapsed+5); assert.notDeepEqual(m.state.islands,paused.islands);
   m.dispatch({type:'cancel'}); assert.deepEqual(m.state.velocity,moving.velocity);
   assert.equal(m.state.launches,moving.launches); assert.equal(m.state.aim,null); advance(m,.1);
   assert(m.state.position.x>moving.position.x);
+});
+test('frequent aim updates cannot discard time, and inactive realm remainders resume exactly', () => {
+  const m=createGardenModel();
+  for(let tick=0;tick<240;tick++){m.dispatch({type:'aim',x:-.8,y:-.6});m.step(STEP/2);}
+  near(m.state.elapsed,1);m.dispatch({type:'cancel'});
+  m.step(STEP/2);m.dispatch({type:'level',level:1});advance(m,.5);m.dispatch({type:'level',level:0});
+  near(m.state.elapsed,1);m.step(STEP/2);near(m.state.elapsed,1+STEP);
+});
+test('a moving hazard can hit an anchored pull, which clears input and safely recovers', () => {
+  const m=createGardenModel();flyTo(m,11.5,2.3,1);
+  m.dispatch({type:'aim',x:-.3,y:-.3});const anchor=m.state.position;
+  advance(m,.5);assert.deepEqual(m.state.position,anchor);assert(m.state.held);
+  const events=advance(m,1.3);assert(events.some(e=>e.type==='hazard'));assert(events.some(e=>e.type==='rescue'));
+  assert.equal(m.state.held,false);assert.equal(m.state.aim,null);assert(m.state.invulnerable>0);
+  const launches=m.state.launches;m.dispatch({type:'release'});assert.equal(m.state.launches,launches);
+  assert(!advance(m,1).some(e=>e.type==='hazard'));
+});
+test('live prediction resolves future moving-platform contact after time spent aiming', () => {
+  const m=createGardenModel(1);m.dispatch({type:'aim',x:-1.08,y:-2.23});const early=m.predict();
+  advance(m,.5);const before=m.state,predicted=m.predict();assert.deepEqual(m.state,before);
+  assert.equal(predicted.outcome.type,'landing');assert.equal(predicted.outcome.platformId,4);
+  assert.notEqual(predicted.outcome.y,early.outcome.y,'Held-time platform phase must change the future landing');
+  assert(Math.abs(predicted.outcome.y-(before.islands[4].y+m.layout.halfHeight))>.1,'Future contact must not use current platform height');
+  predicted.points[0].x=999;predicted.targets.push({id:'fake'});assert.deepEqual(m.state,before);
+  const prediction=m.predict();m.dispatch({type:'release'});
+  let landed=false;for(let tick=0;tick<720;tick++){
+    const events=m.step(STEP);if(events.some(e=>e.type==='land')){landed=true;break;}
+    assert(!events.some(e=>e.type==='rescue'));
+  }
+  assert(landed);near(m.state.elapsed,prediction.outcome.time);near(m.state.position.x,prediction.outcome.x);
+  near(m.state.position.y,prediction.outcome.y);assert.equal(m.state.checkpoint,prediction.outcome.platformId);
+});
+test('a green grazing Tides landing catches the edge and stays safely settled',()=>{
+  const m=createGardenModel(1);flyTo(m,5.55,2.95,1.4);advance(m,3);
+  assert(m.state.grounded);assert.equal(m.state.checkpoint,1);
+  // A real phone's ordinary 30px drag. Before the fix its green landing at
+  // x12.905 had 0.015 of body overlap, then residual drift caused a fall rescue.
+  m.dispatch({type:'aim',x:-.6769336661200374,y:-.6693179027282619});advance(m,.5);
+  const prediction=m.predict();assert.equal(prediction.outcome.type,'landing');assert.equal(prediction.outcome.platformId,2);
+  m.dispatch({type:'release'});let landed=false;
+  for(let tick=0;tick<720;tick++)if(m.step(STEP).some(e=>e.type==='land')){landed=true;break;}
+  assert(landed);near(m.state.position.x,prediction.outcome.x);near(m.state.position.y,prediction.outcome.y);
+  advance(m,5);assert.equal(m.state.rescues,0,'A green landing must not slide into a fall rescue');
+  assert(m.state.grounded);assert.equal(m.state.checkpoint,2);
+  assert(Math.abs(m.state.position.x-m.state.islands[2].x)<m.state.islands[2].radius);
 });
 test('120/60/30 Hz and irregular equal-time frames produce identical mission and physics state', () => {
   const chunks=[Array(360).fill(1/120),Array(180).fill(1/60),Array(90).fill(1/30),Array.from({length:100},()=>[.013,.017]).flat()];
@@ -84,7 +182,8 @@ test('120/60/30 Hz and irregular equal-time frames produce identical mission and
 for (const [index, layout] of LEVELS.entries()) {
   test(layout.name + ': real public gestures finish the distinct mission with no rescue', () => {
     const m=createGardenModel(layout.id), events=[];
-    for(const route of SOLUTION_ROUTES[index])events.push(...launch(m,...route));
+    if(index<2)events.push(...beginnerJourney(m));
+    else for(const route of SOLUTION_ROUTES[index])events.push(...launch(m,...route));
     assert(m.state.completed); assert.equal(m.state.mission.progress,m.state.mission.total);
     assert.equal(activated(events).length,layout.mission.targets.length);
     assert.equal(events.filter(e=>e.type==='complete').length,1);
@@ -94,10 +193,11 @@ for (const [index, layout] of LEVELS.entries()) {
   test(layout.name + ': repeated preview exactly matches live flight and changes no mission state', () => {
     const m=createGardenModel(index);
     const [x,y]=SOLUTION_ROUTES[index][0];m.dispatch({type:'aim',x,y});
-    const before=m.state, predicted=m.trajectory();assert.deepEqual(m.trajectory(),predicted);assert.deepEqual(m.state,before);
+    const before=m.state, prediction=m.predict(), predicted=prediction.points;assert.deepEqual(m.predict(),prediction);assert.deepEqual(m.state,before);
+    assert.deepEqual(m.trajectory(),predicted);
     m.dispatch({type:'release'});const actual=[{...m.state.position}];
     for(let tick=1;tick<=720;tick++){
-      const events=m.step(STEP);if(events.some(e=>e.type==='rescue'))break;
+      const events=m.step(STEP);if(events.some(e=>e.type==='rescue')){const hit=events.find(e=>e.type==='hazard');assert(hit);actual.push({x:hit.x,y:hit.y});break;}
       const ended=events.some(e=>e.type==='land'||e.type==='gate'&&e.blocked);
       if(tick%4===0||ended)actual.push({...m.state.position});if(ended)break;
     }
@@ -112,41 +212,66 @@ for (const [index, layout] of LEVELS.entries()) {
     assert.equal(m.state.mission.progress,0);
   });
 }
-test('resonance rejects a slow crossing, accepts a fast reverse crossing, and never double charges', () => {
-  const m=createGardenModel();flyTo(m,4.8,4.7,.8);
-  const slow=flyTo(m,6.8,3.6,1);assert(slow.some(e=>e.status==='need-speed'));assert.equal(m.state.mission.progress,0);
-  const fast=flyTo(m,4.8,4.7,.3);assert.equal(activated(fast).length,1);assert.equal(m.state.mission.progress,1);
-  const again=flyTo(m,6.8,4.7,.3);assert.equal(activated(again).length,0);assert.equal(m.state.mission.progress,1);
-});
-test('guardian locks reject weak contact; strong Slap eligibility requires actual nearby contact', () => {
-  for(const [power,expected] of [[.59,0],[.6,1]]){
-    const m=createGardenModel(1);flyTo(m,3.5,3.3,.9);m.dispatch({type:'slap',power});
-    assert.equal(m.state.mission.progress,0,'A remote Slap never opens a lock');
-    const events=flyTo(m,5,3.3,.65);assert.equal(m.state.mission.progress,expected);
-    assert(events.some(e=>e.status===(expected?'activated':'need-impact')));
+for(const level of [0,1])test(LEVELS[level].name+': resting platform journeys tolerate varied drag strength',()=>{
+  for(const scale of [()=>.95,()=>1.05,i=>i%2?.95:1.05,i=>i%2?1.05:.95]) {
+    const m=createGardenModel(level);beginnerJourney(m,scale);assert(m.state.completed);assert.equal(m.state.rescues,0);
+    assert.equal(m.state.checkpoint,m.layout.islands.length-1);assert(m.state.grounded);
   }
-  const m=createGardenModel(1);flyTo(m,3.5,3.3,.9);m.dispatch({type:'slap',power:1});
-  m.dispatch({type:'level',level:1});
-  assert(flyTo(m,5,3.3,.65).some(e=>e.status==='need-impact'),'A suspended old slap cannot break a lock');
 });
-test('wrong mirror order resets the sequence, and a closed beam gate physically rejects a fast crossing', () => {
+test('beginner journeys tolerate independent horizontal and vertical aiming errors',()=>{
+  let seed=713;
+  const random=()=>{seed=(Math.imul(seed,1664525)+1013904223)>>>0;return seed/2**32;};
+  for(const level of [0,1])for(let trial=0;trial<20;trial++) {
+    const m=createGardenModel(level);beginnerJourney(m,()=>({x:.95+random()*.1,y:.95+random()*.1}));
+    assert(m.state.completed);assert.equal(m.state.rescues,0);
+  }
+});
+test('resonance accepts an ordinary landing and slow visible contact without double charging', () => {
+  const m=createGardenModel(); const events=flyTo(m,4.5,2.75,1.25);
+  assert.equal(activated(events).length,1); assert.equal(m.state.mission.progress,1);
+  assert(m.state.grounded); assert.equal(m.state.checkpoint,1);
+  assert(!advance(m,3).some(e=>e.type==='target'));
+  m.dispatch({type:'poke',direction:-1}); assert(!advance(m,1).some(e=>e.type==='target'));
+});
+test('guardian locks allow landing after one gentle hit and a second poke breaks the crack', () => {
+  const m=createGardenModel(1), events=flyTo(m,5,2.95,1.25);
+  assert(events.some(e=>e.status==='cracked')); assert(m.state.grounded); assert.equal(m.state.checkpoint,1);
+  assert.equal(m.state.mission.targets[0].hits,1); assert(m.state.mission.targets[0].cracked);
+  assert(!advance(m,3).some(e=>e.type==='target'),'Idle overlap cannot damage a lock again');
+  assert.equal(m.state.mission.progress,0);
+  m.dispatch({type:'poke'}); assert.equal(activated(advance(m,.2)).length,1);
+  assert.equal(m.state.mission.targets[0].hits,2); assert.equal(m.state.mission.progress,1);
+});
+test('the default 55 percent Slap breaks a nearby guardian in one contact, never remotely', () => {
+  const m=createGardenModel(1);flyTo(m,3.5,3.3,.9);
+  m.dispatch({type:'slap',power:.55});assert.equal(m.state.mission.progress,0);
+  const events=advance(m,.15);assert.equal(activated(events).length,1);assert.equal(m.state.mission.targets[0].hits,2);
+});
+test('wrong mirror order preserves solved relays, and a closed beam gate physically rejects a fast crossing', () => {
   const m=createGardenModel(2);
   assert(flyTo(m,4.6,3.4,1.2).some(e=>e.status==='wrong-order'));assert.equal(m.state.mission.progress,0);
   flyTo(m,9.3,4.7,1.2);assert.equal(m.state.mission.progress,1);
-  assert(flyTo(m,19.2,5.5,1.8).some(e=>e.status==='wrong-order'));assert.equal(m.state.mission.progress,0);
+  assert(flyTo(m,19.2,5.5,1.8).some(e=>e.status==='wrong-order'));assert.equal(m.state.mission.progress,1);
   m.dispatch({type:'restart'});flyTo(m,15,9,1.8);flyTo(m,24,7,1);
   m.dispatch({type:'slap',power:1});const events=advance(m,.4);
   assert(events.some(e=>e.type==='gate'&&e.blocked));assert(m.state.position.x<27-.65/2-.42);
   assert.equal(m.state.mission.gateOpen,false);assert.equal(m.state.completed,false);
 });
-test('storm timer starts on first stabilizer, pauses with hold, times out once, and permits retry', () => {
+test('storm timer continues while aiming, retains relays at timeout, and restarts on launch', () => {
   const m=createGardenModel(3);assert.equal(m.state.mission.remainingTime,null);
   launch(m,...SOLUTION_ROUTES[3][0]);assert.equal(m.state.mission.progress,1);
-  const remaining=m.state.mission.remainingTime;m.dispatch({type:'hold',held:true});advance(m,40);
-  near(m.state.mission.remainingTime,remaining);m.dispatch({type:'cancel'});
-  const events=advance(m,31);assert.equal(events.filter(e=>e.type==='timeout').length,1);
-  assert.equal(m.state.mission.progress,0);assert.equal(m.state.mission.remainingTime,null);assert(!m.state.exit.open);
-  m.dispatch({type:'poke'});assert(advance(m,.1).some(e=>e.status==='activated'));assert.equal(m.state.mission.progress,1);
+  const remaining=m.state.mission.remainingTime;m.dispatch({type:'aim',x:-1,y:-1});advance(m,2);
+  near(m.state.mission.remainingTime,remaining-2);assert(m.state.held);
+  const events=advance(m,46);assert.equal(events.filter(e=>e.type==='timeout').length,1);
+  assert.equal(m.state.mission.progress,1);assert.equal(m.state.mission.remainingTime,null);assert(!m.state.exit.open);
+  assert.equal(m.state.checkpoint,1);assert(m.state.grounded);assert(!m.state.held);assert.equal(m.state.aim,null);
+  assert(!advance(m,20).some(e=>e.type==='timeout'));
+  m.dispatch({type:'poke'});near(m.state.mission.remainingTime,45);advance(m,.1);assert(m.state.mission.remainingTime<45);
+});
+test('each storm relay refreshes the full generous time budget', () => {
+  const m=createGardenModel(3);launch(m,...SOLUTION_ROUTES[3][0]);m.dispatch({type:'hold',held:true});advance(m,30);m.dispatch({type:'cancel'});
+  const events=launch(m,...SOLUTION_ROUTES[3][1]);assert.equal(activated(events).length,1);
+  assert.equal(m.state.mission.progress,2);assert(m.state.mission.remainingTime>44);
 });
 test('escort hazard drops the core at a reachable sanctuary; progress survives and pickup is necessary', () => {
   const m=createGardenModel(4);launch(m,...SOLUTION_ROUTES[4][0]);advance(m,.3);
@@ -168,7 +293,23 @@ test('moving platforms really catch and carry Gizmo, including direction reversa
   const events=flyTo(m,x,config.y+m.layout.halfHeight,duration);
   assert(events.some(e=>e.type==='land'&&e.island===3));assert.equal(m.state.checkpoint,3);
   m.dispatch({type:'rescue'});
-  for(let tick=0;tick<720;tick++){m.step(STEP);near(m.state.position.x,m.state.islands[3].x);near(m.state.position.y,m.state.islands[3].y+m.layout.halfHeight);}
+  m.dispatch({type:'aim',x:-.8,y:-.5});
+  for(let tick=0;tick<720;tick++){m.step(STEP);near(m.state.position.x,m.state.islands[3].x);near(m.state.position.y,m.state.islands[3].y+m.layout.halfHeight);assert(m.state.held);}
+  m.dispatch({type:'cancel'});m.step(STEP);near(m.state.position.x,m.state.islands[3].x);assert(m.state.grounded);
+});
+test('manual Rescue preserves a carried core and returns to a dropped core after traveling ahead',()=>{
+  const m=createGardenModel(4);launch(m,...SOLUTION_ROUTES[4][0]);advance(m,.3);
+  const manual=m.dispatch({type:'rescue'});assert(!manual.some(e=>e.type==='core'));assert(m.state.mission.core.carried);
+  // Allow the manual rescue's brief protection to expire before entering a sentinel.
+  advance(m,1.5);
+  const arrival=m.state.elapsed+1.5,y=5+1.7*Math.sin(arrival*2*Math.PI/7);
+  assert(flyTo(m,26.8,y,1.5).some(e=>e.type==='hazard'));assert(!m.state.mission.core.carried);
+  const safe=m.state.mission.core.island;
+  flyTo(m,28,13,2);flyTo(m,40,13,1.5);flyTo(m,52,6.95,1.8);advance(m,1);
+  assert.equal(m.state.checkpoint,8);assert(!m.state.completed);assert.equal(m.state.mission.core.island,safe);
+  m.dispatch({type:'rescue'});assert.equal(m.state.checkpoint,safe);near(m.state.position.x,m.state.islands[safe].x);
+  assert(!m.state.mission.core.carried);m.dispatch({type:'poke',direction:-1});
+  assert(advance(m,.8).some(e=>e.type==='core'&&e.carried));
 });
 test('world switching freezes mission timers and hazards; restart affects only the active mission', () => {
   const m=createGardenModel(3);launch(m,...SOLUTION_ROUTES[3][0]);const storm=m.state;

@@ -17,8 +17,8 @@ function level({ id, name, subtitle, x, y, radii, motions = {}, mission, hazards
     id, name, subtitle, islands, stars: [], starlight: [], environment,
     constellation: { x: last.x, y: last.y + 2.4 },
     halfHeight: .55, xRadius: .42, maxSpeed: 18, maxDrag: 2.6, launchGain: 5.2,
-    fixedStep: 1 / 120, gravity: 8, airDrag: .045, groundFriction: 7.5,
-    landingRetention: .74, bounceThreshold: 7, bounceRestitution: .11, maxBounce: 1.05,
+    fixedStep: 1 / 120, gravity: 8, airDrag: .045, groundFriction: 10,
+    landingRetention: .2, bounceThreshold: 10, bounceRestitution: .08, maxBounce: .65,
     ...physics, hazards, currents,
     mission: { ...mission, gate: mission.gate || null, exit: { x: last.x, y: last.y + .7, radius: 1.1 } },
   });
@@ -26,14 +26,14 @@ function level({ id, name, subtitle, x, y, radii, motions = {}, mission, hazards
 
 export const LEVELS = freeze([
   level({
-    id: 'starlight-garden', name: 'Starlight Garden', subtitle: 'Resonate through the sleeping engine’s three hoops.',
+    id: 'starlight-garden', name: 'Starlight Garden', subtitle: 'Light the three rings and wake the dream engine.',
     x: [0, 4.5, 9, 13.5, 19, 24, 29, 35], y: [1, 2.2, 1.4, 4, 2, 4.8, 3, 5.5],
     radii: [2, 1.6, 2, 1.65, 2.1, 1.6, 2, 2.4],
     motions: { 3: { axis: 'x', amplitude: 1.25, period: 7, phase: 0 } },
-    mission: { type: 'resonance', title: 'Wake the resonance engine', targets: [
-      { id: 'resonance-1', x: 5.8, y: 4.7, radius: .95, kind: 'hoop', requiredSpeed: 5.8 },
-      { id: 'resonance-2', x: 16, y: 6.4, radius: 1, kind: 'hoop', requiredSpeed: 6.4 },
-      { id: 'resonance-3', x: 27.5, y: 6.9, radius: 1.05, kind: 'hoop', requiredSpeed: 7.2 },
+    mission: { type: 'resonance', title: 'Light the three rings', targets: [
+      { id: 'resonance-1', x: 4.5, y: 3.1, radius: 1.12, kind: 'hoop', requiredSpeed: 0 },
+      { id: 'resonance-2', x: 13.5, y: 4.9, radius: 1.12, kind: 'hoop', requiredSpeed: 0 },
+      { id: 'resonance-3', x: 24, y: 5.7, radius: 1.12, kind: 'hoop', requiredSpeed: 0 },
     ] },
     hazards: [
       { id: 'garden-orb', type: 'orb', x: 11.5, y: 3.1, radius: .48, motion: { axis: 'y', amplitude: .85, period: 6, phase: 0 } },
@@ -46,11 +46,11 @@ export const LEVELS = freeze([
     x: [0, 5, 10.8, 16.6, 23, 28.4, 35, 41], y: [1.2, 2.4, 1.6, 3.8, 2.1, 4.4, 3.2, 5.3],
     radii: [2, 2, 1.7, 2, 1.85, 2, 1.7, 2.6],
     motions: { 4: { axis: 'y', amplitude: .7, period: 6.5, phase: 0 } },
-    gravity: 7.1, groundFriction: 6.5,
+    gravity: 7.1, groundFriction: 10,
     mission: { type: 'rescue', title: 'Free the giant jellyfish', targets: [
-      { id: 'guardian-1', x: 5, y: 3.3, radius: .5, kind: 'lock', requiredSpeed: 8.5, requiredPower: .6 },
-      { id: 'guardian-2', x: 16.6, y: 4.7, radius: .5, kind: 'lock', requiredSpeed: 8.5, requiredPower: .6 },
-      { id: 'guardian-3', x: 28.4, y: 5.3, radius: .5, kind: 'lock', requiredSpeed: 8.5, requiredPower: .6 },
+      { id: 'guardian-1', x: 5, y: 3.3, radius: .65, kind: 'lock', requiredSpeed: 6, requiredPower: .5, durability: 2 },
+      { id: 'guardian-2', x: 16.6, y: 4.7, radius: .65, kind: 'lock', requiredSpeed: 6, requiredPower: .5, durability: 2 },
+      { id: 'guardian-3', x: 28.4, y: 5.3, radius: .65, kind: 'lock', requiredSpeed: 6, requiredPower: .5, durability: 2 },
     ] },
     hazards: [
       { id: 'tide-sentinel', type: 'sentinel', x: 13.4, y: 4.7, radius: .6, motion: { axis: 'y', amplitude: 1.5, period: 7, phase: 0 } },
@@ -64,7 +64,7 @@ export const LEVELS = freeze([
     x: [0, 4.6, 9.3, 14.1, 19.2, 24.7, 30, 36.3], y: [1, 2.5, 3.8, 2.1, 4.6, 2.9, 5, 5.8],
     radii: [2, 1.8, 2, 1.7, 1.85, 1.7, 2, 2.4],
     motions: { 3: { axis: 'x', amplitude: 1.3, period: 8, phase: 0 } },
-    gravity: 8.1, groundFriction: 5.2,
+    gravity: 8.1, groundFriction: 9,
     mission: { type: 'sequence', title: 'Align mirrors 1 → 2 → 3', targets: [
       { id: 'mirror-1', x: 9.3, y: 4.7, radius: .55, kind: 'mirror', order: 1 },
       { id: 'mirror-2', x: 4.6, y: 3.4, radius: .55, kind: 'mirror', order: 2 },
@@ -82,7 +82,7 @@ export const LEVELS = freeze([
     radii: [2, 2, 1.8, 2, 1.8, 2, 1.8, 2.4],
     motions: { 4: { axis: 'y', amplitude: 1, period: 7.5, phase: 0 } },
     gravity: 7.8,
-    mission: { type: 'timed', title: 'Link three storm stabilizers', timeLimit: 30, targets: [
+    mission: { type: 'timed', title: 'Wake the storm flowers', timeLimit: 45, targets: [
       { id: 'stabilizer-1', x: 5.5, y: 3.35, radius: .6, kind: 'stabilizer' },
       { id: 'stabilizer-2', x: 17.7, y: 4.65, radius: .6, kind: 'stabilizer' },
       { id: 'stabilizer-3', x: 31.1, y: 5.75, radius: .6, kind: 'stabilizer' },

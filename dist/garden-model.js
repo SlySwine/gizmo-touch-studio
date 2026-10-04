@@ -34,14 +34,15 @@ function initialState(layout) {
     position: { x: first.x, y: first.y + layout.halfHeight }, velocity: { x: 0, y: 0 },
     grounded: true, checkpoint: 0, completed: false, launches: 0, rescues: 0,
     aim: null, held: false, elapsed: 0, invulnerable: 0, recentSlap: null, gateHitUntil: 0,
-    mission: { done: new Set(), touching: new Set(), gateOpen: false, remainingTime: null, status: 'ready',
+    mission: { done: new Set(), touching: new Set(), lockHits: new Map(), lockLaunches: new Map(), gateOpen: false, remainingTime: null, status: 'ready',
       core: layout.mission.type === 'escort' ? { carried: true, dropped: false, x: first.x - .62, y: first.y + 1.2, island: 0, pickupAfter: 0 } : null },
   };
 }
 function cloneState(s) {
   return { ...s, position: point(s.position), velocity: point(s.velocity), aim: s.aim && point(s.aim),
     recentSlap: s.recentSlap && { ...s.recentSlap },
-    mission: { ...s.mission, done: new Set(s.mission.done), touching: new Set(s.mission.touching), core: s.mission.core && { ...s.mission.core } } };
+    mission: { ...s.mission, done: new Set(s.mission.done), touching: new Set(s.mission.touching),
+      lockHits: new Map(s.mission.lockHits), lockLaunches: new Map(s.mission.lockLaunches), core: s.mission.core && { ...s.mission.core } } };
 }
 function pullVelocity(aim, layout) {
   return boundedVector(-aim.x * layout.launchGain, 3 - aim.y * layout.launchGain, layout.maxSpeed);
@@ -85,8 +86,9 @@ function updateGate(s, layout, events) {
   if (open !== s.mission.gateOpen) { s.mission.gateOpen = open; events.push({ type: 'gate', open }); }
 }
 function rescue(s, events, layout, reason = 'manual') {
+  if (reason === 'manual' && s.mission.core && !s.mission.core.carried) s.checkpoint = s.mission.core.island;
   const sanctuary = islandsAt(layout, s.elapsed)[s.checkpoint];
-  if (s.mission.core?.carried && !s.completed) {
+  if (reason !== 'manual' && s.mission.core?.carried && !s.completed) {
     Object.assign(s.mission.core, { carried: false, dropped: true, island: s.checkpoint, pickupAfter: s.elapsed + .35 });
     s.mission.status = 'recover-core';
     events.push({ type: 'core', action: 'drop', carried: false, island: s.checkpoint });
@@ -98,26 +100,18 @@ function rescue(s, events, layout, reason = 'manual') {
   events.push({ type: 'rescue', island: sanctuary.id, reason });
 }
 function hardEnough(s, target) {
-  return Math.hypot(s.velocity.x, s.velocity.y) + EPS >= target.requiredSpeed
-    || !!(s.recentSlap && s.recentSlap.power >= target.requiredPower && s.elapsed - s.recentSlap.at <= 1.25 + EPS);
+  return Math.hypot(s.velocity.x, s.velocity.y) + EPS >= (target.requiredSpeed ?? 6)
+    || !!(s.recentSlap && s.recentSlap.power >= (target.requiredPower ?? .5) && s.elapsed - s.recentSlap.at <= 1.25 + EPS);
 }
 function targetEntry(target, from, to, layout) {
-  if (target.kind === 'hoop') {
-    if (!((from.x < target.x && to.x >= target.x) || (from.x > target.x && to.x <= target.x))) return null;
-    const t = (target.x - from.x) / (to.x - from.x), y = from.y + (to.y - from.y) * t;
-    return Math.abs(y - target.y) <= target.radius ? t : null;
-  }
   return ellipseEntry(from, to, target, target.radius + layout.xRadius, target.radius + layout.halfHeight);
 }
 function touchTarget(s, target, layout, events) {
   const m = s.mission, type = layout.mission.type;
   if (m.done.has(target.id)) return;
   let rejected = null;
-  if (type === 'resonance' && Math.hypot(s.velocity.x, s.velocity.y) + EPS < target.requiredSpeed) rejected = 'need-speed';
-  if (type === 'rescue' && !hardEnough(s, target)) rejected = 'need-impact';
   if ((type === 'sequence' || type === 'escort') && target.order !== m.done.size + 1) {
     rejected = 'wrong-order';
-    if (type === 'sequence') m.done.clear();
   }
   if (type === 'escort' && !m.core.carried) rejected = 'recover-core';
   if (rejected) {
@@ -125,7 +119,21 @@ function touchTarget(s, target, layout, events) {
     events.push({ type: 'target', id: target.id, status: rejected, progress: m.done.size, total: layout.mission.targets.length });
     updateGate(s, layout, events); return;
   }
-  if (type === 'timed' && m.remainingTime === null) m.remainingTime = layout.mission.timeLimit;
+  if (type === 'rescue') {
+    // Two intentional gentle hits or one hard hit. Resting contact cannot auto-win,
+    // and a first chip never creates an invisible wall or throws Gizmo off a ledge.
+    if (!s.launches || m.lockLaunches.get(target.id) === s.launches) return;
+    m.lockLaunches.set(target.id, s.launches);
+    const durability = target.durability ?? 2;
+    const hits = Math.min(durability, (m.lockHits.get(target.id) || 0) + (hardEnough(s, target) ? durability : 1));
+    m.lockHits.set(target.id, hits);
+    if (hits < durability) {
+      m.status = 'cracked';
+      events.push({ type: 'target', id: target.id, status: 'cracked', hits, durability, progress: m.done.size, total: layout.mission.targets.length });
+      return;
+    }
+  }
+  if (type === 'timed') m.remainingTime = layout.mission.timeLimit;
   m.done.add(target.id); m.status = m.done.size === layout.mission.targets.length ? 'reach-exit' : 'active';
   events.push({ type: 'target', id: target.id, status: 'activated', progress: m.done.size, total: layout.mission.targets.length });
   updateGate(s, layout, events);
@@ -133,7 +141,7 @@ function touchTarget(s, target, layout, events) {
 function interactions(s, from, to, events, layout) {
   const contacts = [];
   for (const target of layout.mission.targets) {
-    if (s.mission.done.has(target.id) || (target.kind !== 'hoop' && s.mission.touching.has(target.id))) continue;
+    if (s.mission.done.has(target.id) || s.mission.touching.has(target.id)) continue;
     const fraction = targetEntry(target, from, to, layout);
     if (fraction !== null) contacts.push({ fraction, target });
   }
@@ -147,8 +155,8 @@ function interactions(s, from, to, events, layout) {
     if (c.core) { core.carried = true; core.dropped = false; s.mission.status = 'carry-core'; events.push({ type: 'core', action: 'pickup', carried: true }); updateGate(s, layout, events); }
     else touchTarget(s, c.target, layout, events);
   }
-  s.mission.touching = new Set(layout.mission.targets.filter(t => t.kind !== 'hoop'
-    && ellipseEntry(to, to, t, t.radius + layout.xRadius, t.radius + layout.halfHeight) !== null).map(t => t.id));
+  s.mission.touching = new Set(layout.mission.targets.filter(t =>
+    ellipseEntry(to, to, t, t.radius + layout.xRadius, t.radius + layout.halfHeight) !== null).map(t => t.id));
 }
 function firstContact(s, from, to, layout, beforeTime) {
   let contact = null;
@@ -165,12 +173,6 @@ function firstContact(s, from, to, layout, beforeTime) {
   if (layout.mission.gate && !s.mission.gateOpen) {
     const entry = rectangleEntry(from, to, layout.mission.gate, layout);
     if (entry) offer({ type: 'gate', ...entry });
-  }
-  if (layout.mission.type === 'rescue') for (const target of layout.mission.targets) {
-    if (s.mission.done.has(target.id) || hardEnough(s, target)) continue;
-    if ((from.x - target.x) * s.velocity.x + (from.y - target.y) * s.velocity.y > 0) continue;
-    const fraction = targetEntry(target, from, to, layout);
-    if (fraction !== null) offer({ type: 'lock', fraction, target });
   }
   if (s.invulnerable <= 0) {
     const previousHazards = hazardsAt(layout, beforeTime);
@@ -197,19 +199,26 @@ function integrate(s, events, layout) {
   if (m.remainingTime !== null && m.done.size < layout.mission.targets.length) {
     m.remainingTime = Math.max(0, m.remainingTime - STEP);
     if (m.remainingTime <= EPS) {
-      m.done.clear(); m.remainingTime = null; m.status = 'timeout';
-      events.push({ type: 'timeout' }); updateGate(s, layout, events);
+      m.remainingTime = null; m.status = 'timeout';
+      const last = layout.mission.targets.find(t => t.id === [...m.done].at(-1));
+      if (last) s.checkpoint = islandsAt(layout, s.elapsed).reduce((best, island) =>
+        Math.hypot(island.x - last.x, island.y - last.y) < Math.hypot(best.x - last.x, best.y - last.y) ? island : best).id;
+      events.push({ type: 'timeout', progress: m.done.size });
+      const outcome = { type: 'fall', ...point(s.position), time: s.elapsed, reason: 'timeout' };
+      rescue(s, events, layout, 'timeout');
+      return outcome;
     }
   }
   updateCore(s, layout);
   const from = point(s.position), to = point(from);
+  const heldVelocity = s.held ? point(s.velocity) : null;
   if (s.grounded) {
     const previous = islandsAt(layout, beforeTime)[s.checkpoint], support = islandsAt(layout, s.elapsed)[s.checkpoint];
-    s.velocity.x *= Math.exp(-layout.groundFriction * STEP);
+    s.velocity.x = s.held ? 0 : s.velocity.x * Math.exp(-layout.groundFriction * STEP);
     if (Math.abs(s.velocity.x) < .015) s.velocity.x = 0;
     s.velocity.y = 0;
     to.x += support.x - previous.x + s.velocity.x * STEP; to.y = support.y + layout.halfHeight;
-  } else {
+  } else if (!s.held) {
     s.velocity.x *= Math.exp(-layout.airDrag * STEP); s.velocity.y -= layout.gravity * STEP;
     for (const c of layout.currents) if (Math.abs(from.x - c.x) <= c.width / 2 && Math.abs(from.y - c.y) <= c.height / 2) {
       s.velocity.x += c.ax * STEP; s.velocity.y += c.ay * STEP;
@@ -217,32 +226,48 @@ function integrate(s, events, layout) {
     s.velocity = boundedVector(s.velocity.x, s.velocity.y, layout.maxSpeed);
     to.x += s.velocity.x * STEP; to.y += s.velocity.y * STEP;
   }
+  // Grabbing anchors only Gizmo. World time and relative hazard sweeps still run;
+  // a supported grab follows its platform, and a rising platform can catch it.
+  if (s.held) s.velocity = { x: (to.x - from.x) / STEP, y: (to.y - from.y) / STEP };
   const contact = firstContact(s, from, to, layout, beforeTime);
   const traveled = contact ? { x: from.x + (to.x - from.x) * contact.fraction, y: from.y + (to.y - from.y) * contact.fraction } : to;
   s.position = traveled; interactions(s, from, traveled, events, layout);
   if (contact?.type === 'hazard') {
     events.push({ type: 'hazard', id: contact.hazard.id, x: traveled.x, y: traveled.y });
-    rescue(s, events, layout, 'hazard'); return;
+    const outcome = { type: 'hazard', ...point(traveled), time: s.elapsed, hazardId: contact.hazard.id };
+    rescue(s, events, layout, 'hazard'); return outcome;
   }
   if (contact?.type === 'land') {
     const impact = Math.max(0, -s.velocity.y);
     s.checkpoint = contact.island.id; s.position.y = contact.island.y + layout.halfHeight;
-    s.velocity.x *= layout.landingRetention;
-    s.velocity.y = impact > layout.bounceThreshold ? Math.min(layout.maxBounce, impact * layout.bounceRestitution) : 0;
-    s.grounded = s.velocity.y === 0; events.push({ type: 'land', island: s.checkpoint, impact });
-  } else if (contact?.type === 'gate' || contact?.type === 'lock') {
-    let normal = contact.normal;
-    if (!normal) {
-      const dx = s.position.x - contact.target.x, dy = s.position.y - contact.target.y, length = Math.hypot(dx, dy) || 1;
-      normal = { x: dx / length, y: dy / length };
-    }
+    // A visible edge catch should become a usable foothold. Resolve overlap onto
+    // the support, then retain only as much drift as can stop within its margin.
+    const safeRadius = Math.max(0, contact.island.radius - layout.xRadius - .08);
+    const left = contact.island.x - safeRadius, right = contact.island.x + safeRadius;
+    s.position.x = clamp(s.position.x, left, right);
+    const retained = s.velocity.x * layout.landingRetention;
+    const room = retained < 0 ? s.position.x - left : right - s.position.x;
+    s.velocity.x = Math.sign(retained) * Math.min(Math.abs(retained), room * layout.groundFriction * .8);
+    // The land impact drives the rendered squash. Keeping support attached avoids
+    // a cosmetic bounce letting a moving platform escape from under an edge catch.
+    s.velocity.y = 0; s.grounded = true;
+    events.push({ type: 'land', island: s.checkpoint, impact });
+  } else if (contact?.type === 'gate') {
+    const normal = contact.normal;
     const dot = s.velocity.x * normal.x + s.velocity.y * normal.y;
     s.velocity.x -= 1.45 * dot * normal.x; s.velocity.y -= 1.45 * dot * normal.y;
     s.position.x += normal.x * .015; s.position.y += normal.y * .015; s.grounded = false;
-    if (contact.type === 'gate' && s.elapsed > s.gateHitUntil) { events.push({ type: 'gate', open: false, blocked: true }); s.gateHitUntil = s.elapsed + .3; }
+    if (s.elapsed > s.gateHitUntil) { events.push({ type: 'gate', open: false, blocked: true }); s.gateHitUntil = s.elapsed + .3; }
   } else if (s.grounded && !overlaps(s.position.x, islandsAt(layout, s.elapsed)[s.checkpoint], layout)) s.grounded = false;
-  if (s.position.y < -7) { rescue(s, events, layout, 'fall'); return; }
+  if (heldVelocity && !contact) s.velocity = heldVelocity;
+  if (s.position.y < -7) {
+    const outcome = { type: 'fall', ...point(s.position), time: s.elapsed };
+    rescue(s, events, layout, 'fall'); return outcome;
+  }
   updateCore(s, layout); completeIfAtExit(s, from, s.position, layout, events);
+  if (contact?.type === 'land') return { type: 'landing', ...point(s.position), platformId: contact.island.id, time: s.elapsed };
+  if (contact?.type === 'gate') return { type: 'gate', ...point(s.position), time: s.elapsed };
+  return null;
 }
 function levelIndexOf(level) {
   if (Number.isInteger(level) && level >= 0 && level < LEVELS.length) return level;
@@ -251,22 +276,47 @@ function levelIndexOf(level) {
 function missionSnapshot(s, layout) {
   const m = s.mission, config = layout.mission;
   return { type: config.type, title: config.title, progress: m.done.size, total: config.targets.length,
-    targets: config.targets.map(t => ({ ...t, completed: m.done.has(t.id), next: !m.done.has(t.id) && (!t.order || t.order === m.done.size + 1) })),
+    targets: config.targets.map(t => ({ ...t, completed: m.done.has(t.id), next: !m.done.has(t.id) && (!t.order || t.order === m.done.size + 1),
+      ...(config.type === 'rescue' ? { hits: m.lockHits.get(t.id) || 0, durability: t.durability ?? 2,
+        cracked: !!m.lockHits.get(t.id) && !m.done.has(t.id) } : {}) })),
     gateOpen: m.gateOpen, remainingTime: m.remainingTime, status: m.status,
-    core: m.core ? { carried: m.core.carried, dropped: m.core.dropped, x: m.core.x, y: m.core.y } : null };
+    core: m.core ? { carried: m.core.carried, dropped: m.core.dropped, x: m.core.x, y: m.core.y, island: m.core.island } : null };
 }
 
-/** Pure 120 Hz simulation. Held and inactive worlds pause physics, missions, and hazard phase.
+function launchState(s, velocity, kind, events, layout) {
+  s.velocity = boundedVector(velocity.x, velocity.y, layout.maxSpeed);
+  s.grounded = false; s.held = false; s.aim = null; s.launches++;
+  s.mission.touching.clear();
+  if (layout.mission.type === 'timed' && s.mission.done.size && !s.mission.gateOpen && s.mission.remainingTime === null) {
+    s.mission.remainingTime = layout.mission.timeLimit; s.mission.status = 'active';
+  }
+  events.push({ type: 'launch', kind, velocity: point(s.velocity) });
+}
+
+/** Pure 120 Hz simulation. Holds anchor Gizmo while the active world keeps moving.
  * All levels are selectable. Switching cancels gestures; restart resets only the selected world.
- * trajectory runs the same integrator on a deep copy, including gates, currents, and moving supports.
+ * predict runs the same integrator on a deep copy, including gates, currents, and moving supports.
  */
 export function createGardenModel(level = 0) {
   let levelIndex = Math.max(0, levelIndexOf(level)), layout = LEVELS[levelIndex], s = initialState(layout), accumulator = 0;
-  const saved = new Map([[levelIndex, s]]), unlocked = new Set([0]);
+  const saved = new Map([[levelIndex, s]]), remainders = new Map(), unlocked = new Set([0]);
   function launch(velocity, kind, events) {
-    s.velocity = boundedVector(velocity.x, velocity.y, layout.maxSpeed);
-    s.grounded = false; s.held = false; s.aim = null; s.launches++; accumulator = 0;
-    s.mission.touching.clear(); events.push({ type: 'launch', kind, velocity: point(s.velocity) });
+    launchState(s, velocity, kind, events, layout);
+  }
+  function predict() {
+    // Contact time is an absolute realm timestamp. Contact y is Gizmo's center,
+    // so renderers can place a landing marker without guessing a platform phase.
+    if (!s.aim) return { points: [], outcome: { type: 'flight', ...point(s.position), time: s.elapsed }, targets: [] };
+    const preview = cloneState(s), points = [point(s.position)], targets = [];
+    launchState(preview, pullVelocity(preview.aim, layout), 'pull', [], layout);
+    let outcome = null;
+    for (let tick = 1; tick <= 720; tick++) {
+      const events = []; outcome = integrate(preview, events, layout);
+      targets.push(...events.filter(e => e.type === 'target').map(e => ({ ...e })));
+      if (outcome) { points.push({ x: outcome.x, y: outcome.y }); break; }
+      if (tick % 4 === 0) points.push(point(preview.position));
+    }
+    return { points, targets, outcome: outcome || { type: 'flight', ...point(preview.position), time: preview.elapsed } };
   }
   return Object.freeze({
     get layout() { return layout; },
@@ -286,31 +336,32 @@ export function createGardenModel(level = 0) {
       switch (action.type) {
         case 'level': {
           const index = levelIndexOf(action.level); if (index < 0) break;
+          remainders.set(levelIndex, accumulator);
           s.held = false; s.aim = null; s.recentSlap = null; levelIndex = index; layout = LEVELS[index];
           if (!saved.has(index)) saved.set(index, initialState(layout));
-          s = saved.get(index); accumulator = 0;
+          s = saved.get(index); accumulator = remainders.get(index) || 0;
           events.push({ type: 'level', level: index, levelId: layout.id }); break;
         }
-        case 'hold': if (typeof action.held === 'boolean') { s.held = action.held; accumulator = 0; } break;
+        case 'hold': if (typeof action.held === 'boolean') { s.held = action.held; if (!s.held) s.aim = null; } break;
         case 'aim': if (Number.isFinite(action.x) && Number.isFinite(action.y)) {
-          s.aim = boundedVector(action.x, action.y, layout.maxDrag); s.held = true; accumulator = 0;
+          s.aim = boundedVector(action.x, action.y, layout.maxDrag); s.held = true;
         } break;
         case 'release': if (s.aim) launch(pullVelocity(s.aim, layout), 'pull', events); else s.held = false; break;
-        case 'cancel': s.aim = null; s.held = false; accumulator = 0; break;
+        case 'cancel': s.aim = null; s.held = false; break;
         case 'poke': launch({ x: (Number.isFinite(action.direction) && action.direction < 0 ? -1 : 1) * 1.7, y: 3.6 }, 'poke', events); break;
         case 'slap': {
           const power = Number.isFinite(action.power) ? clamp(action.power, 0, 1) : 0;
           s.recentSlap = { power, at: s.elapsed };
           launch({ x: (Number.isFinite(action.direction) && action.direction < 0 ? -1 : 1) * (2.8 + power * 9.7), y: 4.6 + power * 4.4 }, 'slap', events); break;
         }
-        case 'rescue': rescue(s, events, layout); accumulator = 0; break;
+        case 'rescue': rescue(s, events, layout); break;
         case 'restart': s = initialState(layout); saved.set(levelIndex, s); accumulator = 0; break;
       }
       return events;
     },
     step(dt) {
       const events = [];
-      if (!Number.isFinite(dt) || dt <= 0 || s.held) return events;
+      if (!Number.isFinite(dt) || dt <= 0) return events;
       accumulator += Math.min(dt, 1);
       while (accumulator + EPS >= STEP) {
         integrate(s, events, layout);
@@ -319,19 +370,7 @@ export function createGardenModel(level = 0) {
       }
       return events;
     },
-    trajectory() {
-      if (!s.aim) return [];
-      const preview = cloneState(s); preview.velocity = pullVelocity(preview.aim, layout);
-      preview.grounded = false; preview.held = false; preview.aim = null; preview.mission.touching.clear();
-      const points = [point(preview.position)];
-      for (let tick = 1; tick <= 720; tick++) {
-        const events = []; integrate(preview, events, layout);
-        if (events.some(e => e.type === 'rescue')) break;
-        const ended = events.some(e => e.type === 'land' || e.type === 'gate' && e.blocked);
-        if (tick % 4 === 0 || ended) points.push(point(preview.position));
-        if (ended) break;
-      }
-      return points;
-    },
+    predict,
+    trajectory() { return predict().points; },
   });
 }

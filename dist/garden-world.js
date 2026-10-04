@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { GARDEN } from './garden-model.js';
+import { selectGardenGoal } from './garden-guidance.js';
 
 const COLORS = {
   moss: 0x235f6c, mint: 0x83ffe0, teal: 0x39bdb9, blue: 0x728eff,
@@ -327,6 +328,10 @@ export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) 
   const numberSegments=[['a','b','c','d','e','f'],['b','c'],['a','b','g','e','d'],['a','b','g','c','d'],['f','g','b','c'],['a','f','g','c','d'],['a','f','g','e','c','d'],['a','b','c'],['a','b','c','d','e','f','g'],['a','b','c','d','f','g']];
   const segmentPoints={a:[[-.12,.20],[.12,.20]],b:[[.12,.20],[.12,0]],c:[[.12,0],[.12,-.20]],d:[[-.12,-.20],[.12,-.20]],e:[[-.12,0],[-.12,-.20]],f:[[-.12,.20],[-.12,0]],g:[[-.12,0],[.12,0]]};
   function numeral(number,parent){const points=[];for(const s of numberSegments[number%10])for(const q of segmentPoints[s])points.push(new THREE.Vector3(q[0],q[1],.22));const o=add(new THREE.LineSegments(own(new THREE.BufferGeometry().setFromPoints(points)),basic(0xffffff)),`Mirror ${number}`,parent);return o;}
+  const checkGeometry=own(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.17,0,.27),new THREE.Vector3(-.035,-.12,.27),new THREE.Vector3(.20,.16,.27)]));
+  const checkMaterial=mat(new THREE.LineBasicMaterial({color:0xc6ffe3,depthTest:false,depthWrite:false}));
+  const guideGeometry=own(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.14,.10,0),new THREE.Vector3(0,-.04,0),new THREE.Vector3(.14,.10,0)]));
+  const targetGuide=add(new THREE.Line(guideGeometry,basic(0xffe3a3,{depthTest:false,depthWrite:false})),'Next actionable target guide');targetGuide.renderOrder=24;targetGuide.visible=false;
   function makeTarget(t,index){
     const target=add(new THREE.Group(),`Mission ${t.kind || layout.mission?.type} ${t.id}`);target.position.set(t.x,t.y,.18);
     const r=t.radius || .52,m=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.30,metalness:.5,roughness:.22});
@@ -337,7 +342,8 @@ export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) 
     else if(type==='rescue'){const lock=mesh(own(new THREE.BoxGeometry(.24,.24,.13)),gold,'Jelly cage lock',target);lock.position.y=-.07;const shackle=hoop(.12,gold,target);shackle.position.y=.10;shackle.scale.y*=1.15;}
     else if(type==='timed'){for(let n=0;n<4;n++){const o=mesh(diamond,crystal,'Stabilizer terminal',target);o.scale.set(.06,.13,.06);o.position.set(Math.cos(n/4*TAU)*r,Math.sin(n/4*TAU)*r,0);}}
     else{const center=mesh(diamond,crystal,'Resonator heart',target);center.scale.set(.13,.25,.13);}
-    targets.set(t.id,{group:target,outer,inner,glow,material:m,r,index,done:false});return target;
+    const check=add(new THREE.Line(checkGeometry,checkMaterial),'Completed target check',target);check.visible=false;check.renderOrder=25;
+    targets.set(t.id,{group:target,outer,inner,glow,check,material:m,r,index,done:false});return target;
   }
   (layout.mission?.targets || []).forEach(makeTarget);
   if(layout.mission?.gate){
@@ -375,23 +381,51 @@ export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) 
   }
   let engineCore=null,engineGlow=null;
   if(engine){const energy=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.05,roughness:.16,metalness:.15});engineCore=mesh(sphere,energy,'Engine charge core',engine);engineCore.scale.setScalar(.44);engineGlow=halo(theme.edge,3.6,.02,engine);engineGlow.position.z=.25;}
-  function makeHazard(h){const g=add(new THREE.Group(),`${h.type} obstacle`),m=physical(0xc36a9c,{emissive:0xff4f9d,emissiveIntensity:.7,transparent:true,opacity:.75,roughness:.2});const r=h.radius || .5;const ring=hoop(r,m,g,'Obstacle contact boundary');const inner=hoop(r*.72,m,g);inner.rotation.x=.8;const glow=halo(0xff6099,r*3,.2,g);hazards.set(h.id,{group:g,material:m,ring,inner,glow,r});return hazards.get(h.id);}
+  const hazardShape=new THREE.Shape();for(let i=0;i<24;i++){const a=i/24*TAU,r=i%2?.83:1.10;const x=Math.cos(a)*r,y=Math.sin(a)*r;if(i)hazardShape.lineTo(x,y);else hazardShape.moveTo(x,y);}hazardShape.closePath();
+  const hazardHole=new THREE.Path();hazardHole.absarc(0,0,.68,0,TAU,true);hazardShape.holes.push(hazardHole);
+  const hazardGeometry=own(new THREE.ShapeGeometry(hazardShape));
+  function makeHazard(h){
+    const g=add(new THREE.Group(),`${h.type} obstacle`),m=physical(0xc36a9c,{emissive:0xff4f9d,emissiveIntensity:.7,transparent:true,opacity:.75,roughness:.2,side:THREE.DoubleSide});const r=h.radius || .5;
+    const ring=mesh(hazardGeometry,m,'Serrated danger boundary',g);ring.scale.setScalar(r);
+    const inner=hoop(r*.60,m,g);inner.rotation.x=.8;
+    const warningGeometry=own(new THREE.RingGeometry(.72*r,.81*r,48));
+    const warning=mesh(warningGeometry,basic(0xffd393,{transparent:true,opacity:.85,depthWrite:false}),'Hazard charging warning',g);warning.position.z=.03;warning.visible=false;
+    const glow=halo(0xff6099,r*3,.2,g);hazards.set(h.id,{group:g,material:m,ring,inner,warning,glow,r});return hazards.get(h.id);
+  }
   (layout.hazards || []).forEach(makeHazard);
   const currents=[];
-  for(const c of layout.currents || []){const g=add(new THREE.Group(),'Visible guiding current');g.position.set(c.x,c.y,-.25);for(let j=0;j<3;j++){const h=hoop(Math.min(c.width,c.height)*.32,dimBasic,g);h.position.set(0,(j-1)*c.height*.24,0);h.scale.y=.38;}currents.push({group:g,source:c});}
+  for(const c of layout.currents || []){
+    const g=add(new THREE.Group(),'Flowing current direction');g.position.set(c.x,c.y,-.6);
+    const direction=new THREE.Vector2(c.ax || 0,c.ay || 0);if(direction.lengthSq()<.001)direction.set(0,1);direction.normalize();
+    const arrows=[];for(let j=0;j<5;j++){const arrow=add(new THREE.Line(guideGeometry,basic(theme.edge,{transparent:true,opacity:.23,depthWrite:false})),'Current chevron',g);arrow.rotation.z=Math.atan2(direction.y,direction.x)+Math.PI/2;arrow.scale.setScalar(1.25);arrows.push(arrow);}
+    currents.push({group:g,source:c,direction,arrows});
+  }
 
-  const trajectoryGeometry=own(new THREE.BufferGeometry());const trajectoryPositions=new Float32Array(180*3);trajectoryGeometry.setAttribute('position',new THREE.BufferAttribute(trajectoryPositions,3));trajectoryGeometry.setDrawRange(0,0);
-  const trajectoryPoints=add(new THREE.Points(trajectoryGeometry,mat(new THREE.PointsMaterial({color:0xffe6a6,size:.065,sizeAttenuation:true,transparent:true,opacity:.9,depthWrite:false}))), 'Actual flight prediction');
-  const landingMarker=hoop(.22,basic(0xffe7a3),group,'Predicted landing');landingMarker.rotation.x=Math.PI/2;landingMarker.visible=false;
+  const maxPreviewPoints=240,trajectoryGeometry=own(new THREE.BufferGeometry()),trajectoryPositions=new Float32Array(maxPreviewPoints*3);
+  trajectoryGeometry.setAttribute('position',new THREE.BufferAttribute(trajectoryPositions,3));trajectoryGeometry.setDrawRange(0,0);
+  const pathMaterial=mat(new THREE.PointsMaterial({color:0xa9ffdc,size:.085,sizeAttenuation:true,transparent:true,opacity:.95,depthTest:false,depthWrite:false}));
+  const pathLineMaterial=mat(new THREE.LineBasicMaterial({color:0xa9ffdc,transparent:true,opacity:.28,depthTest:false,depthWrite:false}));
+  const trajectoryPoints=add(new THREE.Points(trajectoryGeometry,pathMaterial),'Actual flight prediction');trajectoryPoints.renderOrder=21;
+  const trajectoryLine=add(new THREE.Line(trajectoryGeometry,pathLineMaterial),'Continuous flight guide');trajectoryLine.renderOrder=20;
+  const landingMarker=add(new THREE.Group(),'Predicted landing');landingMarker.visible=false;landingMarker.renderOrder=23;
+  const landingMaterial=basic(0xa9ffdc,{depthTest:false,depthWrite:false,side:THREE.DoubleSide});
+  const bullseye=mesh(own(new THREE.RingGeometry(.22,.33,40)),landingMaterial,'Solid landing bullseye',landingMarker);bullseye.rotation.x=-Math.PI/2;bullseye.renderOrder=23;
+  const landingDot=mesh(own(new THREE.CircleGeometry(.085,20)),landingMaterial,'Landing center',landingMarker);landingDot.rotation.x=-Math.PI/2;landingDot.renderOrder=23;
+  const landingPin=add(new THREE.Line(guideGeometry,landingMaterial),'Landing down pointer',landingMarker);landingPin.position.set(0,.24,.1);landingPin.renderOrder=24;
+  const stopMarker=add(new THREE.Group(),'Unsafe trajectory endpoint');stopMarker.visible=false;
+  const stopMaterial=basic(0xffbc77,{depthTest:false,depthWrite:false,transparent:true,opacity:.95});
+  const stopRing=hoop(.24,stopMaterial,stopMarker,'Unconfirmed or blocked endpoint');stopRing.renderOrder=23;
+  const cross=own(new THREE.BufferGeometry().setFromPoints([new THREE.Vector3(-.13,-.13,0),new THREE.Vector3(.13,.13,0),new THREE.Vector3(-.13,.13,0),new THREE.Vector3(.13,-.13,0)]));
+  const stopCross=add(new THREE.LineSegments(cross,stopMaterial),'Unsafe endpoint cross',stopMarker);stopCross.renderOrder=24;
   const burstCount=coarse?120:220,burstParticles=Array.from({length:burstCount},()=>({life:0,max:1,x:0,y:0,z:0,vx:0,vy:0,vz:0}));let burstCursor=0;
   const burstGeo=own(pointsGeometry(burstParticles.map(()=>({x:0,y:0,z:0})),random,[theme.edge,theme.accent,0xffdea0],true));burstGeo.attributes.life.array.fill(0);const burstMat=mat(particleMaterial({size:4.5,opacity:1}));add(new THREE.Points(burstGeo,burstMat),'Contact and victory particles');
   function burst({x=0,y=0,type='hit',status,id}){
     const target=id?targets.get(id):null;
-    if(type==='target' && status && status!=='activated'){if(target)target.rejectUntil=timeUniform.value+.65;return;}
+    if(type==='target' && status && status!=='activated' && status!=='cracked'){if(target)target.rejectUntil=timeUniform.value+.65;return;}
     if(type==='target' && target){if(timeUniform.value-(target.lastBurst ?? -10)<.05)return;target.lastBurst=timeUniform.value;}
     for(let i=0;i<(type==='complete'?60:24);i++){const p=burstParticles[burstCursor++%burstCount],a=random()*TAU,s=1+random()*3;p.x=x;p.y=y;p.z=.2;p.vx=Math.cos(a)*s;p.vy=Math.sin(a)*s+1;p.vz=(random()-.5)*2;p.life=p.max=.6+random()*.65;}}
   let lastComplete=false,disposed=false;
-  function update({time=0,dt=1/60,state={},trajectory=[],cameraTarget}={}){
+  function update({time=0,dt=1/60,state={},trajectory=[],prediction=null,cameraTarget}={}){
     if(disposed)return;timeUniform.value=time;fireflyMaterial.uniforms.time.value=time;burstMat.uniforms.time.value=time;
     const focus=cameraTarget || state.position || {x:0,y:2};sky.position.x=focus.x;sky.position.y=focus.y+10;
     key.position.set(focus.x-5,focus.y+9,8);key.target.position.set(focus.x+2,focus.y-1,-2);fill.position.set(focus.x+3,focus.y-1,3);
@@ -399,15 +433,20 @@ export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) 
     for(const a of platformAnimations){if(a.type==='jelly')a.organ.scale.set(.32,.19*(1+Math.sin(time*1.7)*.10),.32);else a.group.rotation.z=time*.12;}
     for(const j of backgroundJellies){j.group.position.set(j.origin.x+Math.sin(time*.065+j.phase)*1.5,j.origin.y+Math.sin(time*.17+j.phase)*.65,j.origin.z);const pulse=1+Math.sin(time*.9+j.phase)*.05;j.organ.scale.set(.32*pulse,.19*pulse,.32*pulse);}
     const mission=state.mission || {};
+    const nearest=selectGardenGoal(state);
+    targetGuide.visible=!!nearest;if(nearest)targetGuide.position.set(nearest.x,nearest.y+(nearest.radius || .6)+.36+Math.sin(time*2.1)*.055,.4);
+    const predictedTargets=new Map((prediction?.targets || []).map(t=>[t.id,t]));
     for(const [i,t] of (mission.targets || layout.mission?.targets || []).entries()){
       const v=targets.get(t.id) || (makeTarget(t,i),targets.get(t.id));v.group.position.set(t.x,t.y,.18);
-      const done=!!t.completed,active=!done&&(layout.mission?.type!=='sequence'||t.next);
+      const done=!!t.completed,active=!done&&t.next!==false;
       if(done&&!v.done)burst({x:t.x,y:t.y,type:'target',id:t.id,status:'activated'});v.done=done;
       v.material.color.setHex(done?0x7bdfb1:active?theme.edge:0x68627c);v.material.emissiveIntensity=done?.13:active?.65:.06;
-      v.glow.material.opacity=done?.05:active?.17+Math.sin(time*2.8)*.045:.035;v.outer.rotation.z=time*(active?.24:.05);v.inner.rotation.y=Math.sin(time*.8+i)*.22;v.group.scale.setScalar(done?.78:1);
+      v.glow.material.opacity=done?.035:active?.18+Math.sin(time*2.8)*.025:.02;v.outer.rotation.z=time*(active?.24:.05);v.inner.rotation.y=Math.sin(time*.8+i)*.22;v.group.scale.setScalar(done?.84:1);v.check.visible=done;
+      const expected=predictedTargets.get(t.id);if(active && expected && ['activated','cracked'].includes(expected.status)){v.glow.material.opacity=.31;v.material.emissiveIntensity=.95;}
+      v.outer.visible=!done;v.inner.visible=!done;
       const rejected=time<(v.rejectUntil || 0);v.outer.scale.setScalar(v.r*(rejected?1+Math.sin(time*22)*.055:1));
       if(rejected){v.material.color.setHex(0xffb45a);v.material.emissive.setHex(0xffa83f);v.material.emissiveIntensity=.8;v.glow.material.opacity=.19;}else v.material.emissive.setHex(theme.edge);
-      if(layout.mission?.type==='rescue'){const lock=v.group.getObjectByName('Jelly cage lock');const shackle=v.group.children.find(o=>o.name==='Luminous hoop');if(lock){lock.rotation.z=done?.7:0;lock.position.x=done?.13:0;}if(shackle){shackle.rotation.z=done?-.9:0;shackle.position.x=done?-.13:0;}}
+      if(layout.mission?.type==='rescue'){const lock=v.group.getObjectByName('Jelly cage lock');const shackle=v.group.children.find(o=>o.name==='Luminous hoop');if(lock){lock.rotation.z=done?.7:t.cracked?.22:0;lock.position.x=done?.13:t.cracked?.04:0;}if(shackle){shackle.rotation.z=done?-.9:t.cracked?-.28:0;shackle.position.x=done?-.13:t.cracked?-.04:0;}}
     }
     for(const link of energyLinks){const ts=mission.targets || [],from=ts[link.index];link.line.visible=!!from?.completed;if(from){const to=missionType==='resonance'?exitSpec:ts[link.index+1] || link.to;link.line.geometry.attributes.position.array.set([from.x,from.y,-.24,to.x,to.y,-.24]);link.line.geometry.attributes.position.needsUpdate=true;}}
     if(gate)gate.visible=!mission.gateOpen;
@@ -419,10 +458,23 @@ export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) 
     if(core){const c=mission.core;core.visible=!!c;if(c){core.position.set(c.x,c.y,.35);core.rotation.y=time*.8;core.rotation.z=Math.sin(time)*.15;if(coreGlow)coreGlow.material.opacity=c.carried?.24:.40+Math.sin(time*3)*.10;
       if(coreLink){coreLink.visible=!!c.carried;if(c.carried){const from=state.position || c;coreLink.geometry.attributes.position.array.set([from.x,from.y,.25,(from.x+c.x)*.5,(from.y+c.y)*.5-.12,.3,c.x,c.y,.35]);coreLink.geometry.attributes.position.needsUpdate=true;}}}else if(coreLink)coreLink.visible=false;}
     if(engine){engine.rotation.y=Math.sin(time*.14)*.15;if(exitOpen)engine.rotation.z=time*.09;const charged=(mission.targets || []).filter(t=>t.completed).length/Math.max(1,missionTargets.length);if(engineCore)engineCore.material.emissiveIntensity=.08+charged*1.1;if(engineGlow)engineGlow.material.opacity=.025+charged*.24;}
-    for(const h of state.hazards || []){const v=hazards.get(h.id) || makeHazard(h);v.group.position.set(h.x,h.y,.1);const active=!!h.active,warning=Number(h.warning || h.warn || 0);v.material.emissiveIntensity=active?1.2:warning?.45:.06;v.material.opacity=active?.85:warning?.55:.16;v.material.color.setHex(active?0xff579b:warning?0xffd190:0x759bbb);v.glow.material.opacity=active?.24:warning?.14:.025;v.ring.rotation.z=time*(active?1.5:.3);v.inner.rotation.y=time*.8;}
-    for(const c of currents)c.group.rotation.z=(c.source.ax||0)>.1?-Math.PI/2:(c.source.ax||0)<-.1?Math.PI/2:0;
-    let count=0;for(let i=0;i<trajectory.length&&count<180;i+=2){const p=trajectory[i];trajectoryPositions.set([p.x,p.y,.55],count++*3);}trajectoryGeometry.setDrawRange(0,count);trajectoryGeometry.attributes.position.needsUpdate=true;
-    landingMarker.visible=false;if(trajectory.length){const end=trajectory.at(-1),actual=state.islands || layout.islands;const p=actual.find(p=>Math.abs(end.x-p.x)<=p.radius+(layout.xRadius || .42)&&Math.abs(end.y-p.y-(layout.halfHeight || .55))<.07);if(p){landingMarker.visible=true;landingMarker.position.set(end.x,p.y+.025,.05);}}
+    for(const h of state.hazards || []){const v=hazards.get(h.id) || makeHazard(h);v.group.position.set(h.x,h.y,.1);const active=!!h.active,warning=Number(h.warning || h.warn || 0);v.material.emissiveIntensity=active?1.2:warning?.45:.06;v.material.opacity=active?.85:warning?.55:.16;v.material.color.setHex(active?0xff579b:warning?0xffd190:0x759bbb);v.glow.material.opacity=active?.24:warning?.14:.025;v.ring.rotation.z=time*(active?.5:.1);v.inner.rotation.y=time*.8;v.warning.visible=!active&&warning>0;v.warning.geometry.setDrawRange(0,Math.ceil(48*warning)*6);}
+    for(const c of currents){const length=Math.max(1,Math.min(c.source.width,c.source.height)*.72);c.arrows.forEach((arrow,i)=>{const t=((time*.22+i/c.arrows.length)%1-.5)*length;arrow.position.set(c.direction.x*t,c.direction.y*t,0);arrow.material.opacity=.12+.12*Math.sin(((t/length)+.5)*Math.PI);});}
+    const path=prediction?.points || trajectory;
+    const outcome=prediction?.outcome || null;
+    const count=Math.min(maxPreviewPoints,path.length);
+    // Resample across the entire path so the exact final contact never disappears on alternating samples.
+    for(let i=0;i<count;i++){const index=count===1?0:Math.round(i*(path.length-1)/(count-1));const p=path[index];trajectoryPositions.set([p.x,p.y,.4],i*3);}
+    trajectoryGeometry.setDrawRange(0,count);trajectoryGeometry.attributes.position.needsUpdate=true;
+    const landed=outcome?.type==='landing',blocked=outcome?.type==='hazard'||outcome?.type==='gate';
+    const previewColor=landed?0xa9ffdc:blocked?0xffa1a5:0xffcb88;
+    pathMaterial.color.setHex(previewColor);pathLineMaterial.color.setHex(previewColor);
+    landingMarker.visible=!!(count && landed);stopMarker.visible=!!(count && !landed);
+    const endpoint=outcome || path.at(-1);
+    if(landingMarker.visible){landingMarker.position.set(outcome.x,outcome.y-(layout.halfHeight || .55)+.035,.12);}
+    if(stopMarker.visible&&endpoint){stopMarker.position.set(endpoint.x,endpoint.y,.45);stopMaterial.color.setHex(previewColor);stopCross.visible=blocked||outcome?.type==='fall';stopRing.material.opacity=blocked?.95:.65;}
+    group.userData.preview={outcome:outcome?.type || (count?'unconfirmed':'none'),landingVisible:landingMarker.visible,unsafeVisible:stopMarker.visible,pointCount:count,
+      endpoint:endpoint?{x:endpoint.x,y:endpoint.y}:null,landing:landingMarker.visible?{x:landingMarker.position.x,y:landingMarker.position.y,platformId:outcome.platformId}:null};
     if(state.completed&&!lastComplete)burst({x:state.position?.x || exitSpec.x,y:state.position?.y || exitSpec.y,type:'complete'});lastComplete=!!state.completed;
     for(let i=0;i<burstCount;i++){const p=burstParticles[i];if(p.life>0){p.life=Math.max(0,p.life-dt);p.vy-=dt*2.8;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;}burstGeo.attributes.position.array.set([p.x,p.y,p.z],i*3);burstGeo.attributes.life.array[i]=p.life/p.max;}burstGeo.attributes.position.needsUpdate=true;burstGeo.attributes.life.needsUpdate=true;
   }

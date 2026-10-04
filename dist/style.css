@@ -19,7 +19,11 @@
 
 .garden-guide[data-selected-tool=brush],.garden-guide[data-selected-tool=slap]{bottom:105px}
 
+.garden-beacon{position:absolute;z-index:2;display:grid;place-items:center;width:42px;height:42px;transform:translate(-50%,-50%);border:1px solid #a7f3d9a0;border-radius:50%;background:#112733dd;box-shadow:0 0 20px #78e6c330;color:#d0fff0;pointer-events:none}.garden-beacon[hidden]{display:none}.garden-beacon span{font-size:22px;font-weight:600;line-height:1}.garden-beacon i{position:absolute;inset:-13px;display:flex;align-items:center;justify-content:flex-end;font-size:18px;font-style:normal;transform-origin:center}.garden-beacon[data-kind=core]{border-color:#ffdb99;color:#ffe0ac;background:#342741df}
+
 .garden-victory .dream-again{border:0;background:transparent;color:#90a8bd;font-size:11px;padding:16px 5px 0}
+.reset.lost-core{color:#ffe2ae;border-color:#cba05b;box-shadow:0 0 18px #ffcd7025}
+.garden-beacon[data-outcome=hazard],.garden-beacon[data-outcome=gate],.garden-beacon[data-outcome=fall]{border-color:#ff9ca4;color:#ffc5ca;background:#3e2431ed}.garden-beacon[data-outcome=flight]{border-color:#efc18d;color:#ffe2b2;background:#372b28ed}
 
 .in-garden .play-button svg{transform:rotate(180deg)}
 
@@ -34,3 +38,6 @@
 @media(max-height:650px){.garden-hud{top:77px}.garden-progress-row{margin-top:7px}}
 
 .garden-mission-row{display:flex;align-items:center;gap:12px;margin:12px 4px 0;color:#eef1ff;font-size:12px;text-shadow:0 1px 8px #080b20}.garden-mission-row output{font-variant-numeric:tabular-nums;color:#c7f7ea}.garden-mission-row .urgent{color:#ffadac}.garden-mission-row [hidden]{display:none}#garden-core{color:#7c7891;font-size:19px}#garden-core.carried{color:#b7f8ef;filter:drop-shadow(0 0 7px #69dec9)}.mission-pip{width:20px;height:20px;color:#74738f}.mission-pip svg{width:100%;height:100%;fill:transparent;stroke:currentColor;stroke-width:1.3}.mission-pip.next{color:#c4cee5}.mission-pip.found{color:#b7ffeb;filter:drop-shadow(0 0 5px #77eccc80)}.mission-pip.found svg{fill:#aff7df33}.garden-progress-row{margin-top:9px}@media(max-width:700px){.garden-mission-row{font-size:10px;margin-top:9px}.mission-pip{width:16px;height:16px}.garden-progress-row{margin-top:6px}}
+
+/* Landscape phones retain the entire toolbar and a usable play surface. */
+@media(max-height:500px){#studio{height:100svh;min-height:0}.masthead,.in-garden .masthead{padding:14px 20px}.brand h1,.in-garden .brand h1{font-size:24px}.header-actions{gap:7px}.reset,.play-button{min-height:40px;padding:9px 13px;font-size:12px}.sound-toggle{width:40px;padding:9px}.controls,.in-garden .controls{padding:6px 14px calc(22px + env(safe-area-inset-bottom))}.tools{padding:4px;gap:3px;width:auto;max-width:none}.tool{min-height:42px;width:110px;padding:8px 12px;flex-direction:row;font-size:12px;gap:8px}.tool svg{width:20px;height:20px}.mood{font-size:11px;line-height:15px;bottom:3px}.garden-hud{top:64px;left:20px}.garden-mission-row{font-size:10px;margin-top:7px}.garden-progress-row{margin-top:6px}.mission-pip{width:15px;height:15px}#garden-level{font-size:10px;padding:7px 28px 7px 10px}.garden-guide{bottom:12px}.tool-settings{width:240px;padding:6px 12px;font-size:11px;bottom:calc(100% + 5px)}.tool-settings input{height:23px}.garden-victory{padding:16px 24px}.garden-victory h2{font-size:24px;margin:8px 0 14px}.victory-spark{font-size:28px}.garden-victory>div{margin-top:12px}.garden-victory .dream-again{padding-top:10px}}

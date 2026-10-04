@@ -273,29 +273,31 @@ function changeView(mode){
 }
 function gardenEvent(event){
   if(event.type==='hazard'||event.type==='timeout'){endGesture();sound.stop();settleCharacter();}
+  if(event.type==='rescue'&&active){endGesture();sound.stop();}
   const strength=event.type==='land'?Math.min(1,(event.impact||1)/9):event.type==='target'?Math.min(1,(event.progress||event.count||1)/(event.total||3)):1;
-  const rejected=(event.type==='target'&&event.status&&event.status!=='activated')||(event.type==='gate'&&event.open===false)||(event.type==='core'&&event.action==='drop');
+  const rejected=(event.type==='target'&&event.status&&!['activated','cracked'].includes(event.status))||(event.type==='gate'&&event.open===false)||(event.type==='core'&&event.action==='drop');
   sound.wonder(rejected?'hazard':event.type,rejected?.2:strength);
   if(event.type==='land')squash.velocity=THREE.MathUtils.clamp(squash.velocity+(event.impact||0)*.065,-2,2);
   if(event.type==='level'){
-    const remarks={resonance:'Those rings could use a little momentum.',rescue:'Nobody puts a jellyfish in a cage.',sequence:'Three mirrors. One very particular order.',timed:'A storm with a deadline. Of course.',escort:'Precious cargo. Impeccable hat.'};
+    const remarks={resonance:'Let’s hop into the glowing rings!',rescue:'Bump the locks to free our jellyfish friend.',sequence:'Follow the bright mirror. One, two, three!',timed:'Wake each flower before its light runs out!',escort:'Let’s bring this little dream home.'};
     setMood(remarks[event.missionType]||'A whole dream. All for me?');idleReturn=time+8;
   }
   if(event.type==='target'){
-    if(rejected){setMood(({'need-speed':'A little more momentum for that ring.','need-impact':'That lock needs a proper whack.','wrong-order':'The other mirror is calling first.','recover-core':'I appear to be missing my precious cargo.'})[event.status]||'That needs another approach.');}
+    if(event.status==='cracked'){brushJoy=.4;setMood('It cracked! One more bump!');}
+    else if(rejected){const next= garden?.state.mission?.targets.find(target=>target.next);setMood(({'need-speed':'Into the glowing ring we go!','need-impact':'A bump or a slap will crack that lock.','wrong-order':`Look for the glowing ${next?.order || 'next'} mirror. We kept our progress!`,'recover-core':'Our little dream is behind us. Rescue takes us back.'})[event.status]||'Let’s try the glowing one.');}
     else{brushJoy=.8;setMood(event.progress===event.total?'That sounds like an open door.':'Now we’re getting somewhere.');}
     idleReturn=time+5;
   }
   if(event.type==='gate'){setMood(event.open===false?'The passage is still sealed.':'I believe that is my entrance.');idleReturn=time+5;}
-  if(event.type==='rescue'){settleCharacter();setMood(garden?.state.mission?.core?.carried===false?'The core slipped. It’s nearby.':'A tactical retreat. Obviously.');idleReturn=time+5;}
+  if(event.type==='rescue'){if(event.reason!=='hazard')settleCharacter();setMood(event.reason==='hazard'?'Oop! Watch those spiky sparks.':garden?.state.mission?.core?.carried===false?'Our little dream is right here. Give it a nudge.':event.reason==='timeout'?'The flowers we woke are still safe. Try the next one!':'Safe landing. Let’s try again!');idleReturn=time+6;}
   if(event.type==='hazard'){react('poke',new THREE.Vector3(0,1.9,1));setMood('Rude. Even for a dream.');idleReturn=time+5;}
-  if(event.type==='timeout'){setMood('Right. A little less sightseeing this time.');idleReturn=time+6;}
+  if(event.type==='timeout'){setMood('We kept our flowers! Let’s try the next one.');idleReturn=time+6;}
   if(event.type==='core'){setMood((event.carried===false||event.action==='drop')?'I should probably get that back.':'Safe with me. Mostly.');idleReturn=time+5;}
   if(event.type==='complete'){brushJoy=1;setMood('I knew this hat was lucky.');idleReturn=time+15;}
 }
 
 function reset(){
-  if(garden?.active){endGesture();sound.stop();settleCharacter();garden.dispatch({type:'rescue'});return;}
+  if(garden?.active){endGesture();sound.stop();settleCharacter();garden.dispatch({type:'rescue'});garden.update(time,0);return;}
   endGesture();sound.stop();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;
   wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);squash.value=squash.velocity=0;hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;
   for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}
@@ -354,6 +356,13 @@ function startGesture(e){
   const n=tool==='brush'?null:newNode(hit.point,tool==='pull'?1.03:.86);
   hitPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.world);
   active={id:e.pointerId,node:n,start:hit.world.clone(),last:hit.point.clone(),tool,point:hit.point.clone(),startTime:time,eventTime:e.timeStamp,dragVelocity:new THREE.Vector3(),soundSpeed:0,soundPan:pointer.x};stage.classList.add('contact');cursor.style.opacity='1';
+  if(tool==='pull'&&garden?.active){
+    const depth=hit.world.clone().sub(camera.position).dot(camera.getWorldDirection(new THREE.Vector3()));
+    active.screenStart={x:e.clientX,y:e.clientY};
+    active.grabUnit=2*Math.max(.1,depth)*Math.tan(THREE.MathUtils.degToRad(camera.fov*.5))/canvas.clientHeight;
+    active.grabRight=new THREE.Vector3(1,0,0).applyQuaternion(camera.quaternion);
+    active.grabUp=new THREE.Vector3(0,1,0).applyQuaternion(camera.quaternion);
+  }
   if(tool==='poke')sound.poke({strength:.6+Math.min(reaction.pokes,4)*.07,pan:pointer.x});else sound.begin(tool,{pan:pointer.x});
   if(tool==='poke'){if(garden?.active)garden.dispatch({type:'poke',direction:pointer.x<garden.screenPosition.x?1:-1});react('poke',hit.point);n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-6.6);squash.velocity=THREE.MathUtils.clamp(squash.velocity+.95,-3.2,3.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.96;setMood(reaction.pokes>=4?'Personal space. Ever heard of it?':reaction.pokes>=2?'You again.': 'Hey! I was napping.');}
   if(tool==='pull'){react('pull',hit.point);responseTarget=.75;setMood('A little stretch…');}
@@ -374,7 +383,11 @@ function moveGesture(e){
     active.x=e.clientX;active.y=e.clientY;active.eventTime=e.timeStamp;return;
   }
   if(active.tool==='pull'){
-    const p=raycaster.ray.intersectPlane(hitPlane,temp);
+    // Screen displacement stays intentional even as the held platform and camera move.
+    const p=active.screenStart?temp.copy(active.start)
+      .addScaledVector(active.grabRight,(e.clientX-active.screenStart.x)*active.grabUnit)
+      .addScaledVector(active.grabUp,(active.screenStart.y-e.clientY)*active.grabUnit)
+      :raycaster.ray.intersectPlane(hitPlane,temp);
     if(p){if(garden?.active)garden.dispatch({type:'aim',x:p.x-active.start.x,y:p.y-active.start.y});const localNow=body.worldToLocal(p.clone()),localStart=body.worldToLocal(active.start.clone());const target=localNow.sub(localStart).clampLength(0,2.65);const dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
       active.dragVelocity.copy(target).sub(active.node.target).divideScalar(dt).clampLength(0,10);active.eventTime=e.timeStamp;active.node.target.copy(target);
       active.soundSpeed=Math.min(1,active.dragVelocity.length()/6);
@@ -427,7 +440,7 @@ window.addEventListener('keydown',e=>{
   if(document.activeElement!==canvas||!loaded)return;
   if(garden?.active&&(e.key===' '||e.key.startsWith('Arrow'))){unlockSound(e);if(garden.key(e,tool,slapPower)){e.preventDefault();return;}}
   if(e.key===' '){
-    if(tool==='slap'){e.preventDefault();if(e.repeat||active)return;unlockSound(e);performSlap(new THREE.Vector3(.65,1.7,1.2),new THREE.Vector3(0,0,1));gestureCount++;return;}
+    if(tool==='slap'){e.preventDefault();if(e.repeat||active)return;unlockSound(e);performSlap(new THREE.Vector3(.65,1.7,1.2),new THREE.Vector3(0,0,1),0,garden?.active?new THREE.Vector3(garden.launchDirection,0,0):null);gestureCount++;return;}
     e.preventDefault();unlockSound(e);sound.poke({strength:.7});
     react('poke',new THREE.Vector3(0,1.6,1.25));setMood(reaction.pokes>=3?'I’m counting those.':'Hey! I was napping.');
     const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-8.5;squash.velocity=THREE.MathUtils.clamp(squash.velocity+.95,-3.2,3.2);responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;
@@ -495,4 +508,4 @@ window.gizmo={get state(){return {loaded,worldsReady:!!garden,graphics:gardenRen
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Slap, Pull, Brush, or Turn in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
-register({name:'reset_gizmo',title:'Reset Gizmo',description:'In the studio, restore Gizmo’s shape and clear brush strokes. In a realm, return to the last safe landing while preserving hairstyle and mission progress; carried dreamcore cargo is dropped nearby for recovery.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+register({name:'reset_gizmo',title:'Reset Gizmo',description:'In the studio, restore Gizmo’s shape and clear brush strokes. In a realm, return to the last safe landing while preserving hairstyle, mission progress and carried cargo. If the dreamcore is already dropped, return to its landing so it can be picked up.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
