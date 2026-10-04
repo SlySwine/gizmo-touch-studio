@@ -26,8 +26,12 @@ The pure model owns movement, collision, charge and predicted flight, transport 
 
 ## Recovery and limits
 
-A local versioned save retains progress, carried cells, followers, secrets, visited routes, chimes and the moon garden. Earlier version-one saves remain compatible. Reloading during a ride returns to its departure dock; a held charge is never resumed unexpectedly. Invalid fields are rejected or clamped and unsafe positions recover to authored checkpoints. Returning to safety preserves cargo and progress. A fresh journey first stores a backup; Previous journey swaps between them. Backup write failure keeps the current journey unchanged.
+A local versioned save retains progress, carried cells, followers, secrets, visited routes, chimes and the moon garden. Earlier version-one saves remain compatible. Reloading during a ride returns to its departure dock; a held charge is never resumed unexpectedly. Invalid fields are rejected or clamped and unsafe positions recover to authored checkpoints. Returning to safety preserves cargo and progress. Restart in the header, Restart quests in the map, and Play Again at the finale share one confirmation. Cancel returns to the originating screen. Confirm starts the quests again at the Atrium while preserving hairstyle and preferences. Previous journey restores the retained adventure; repeated empty replays keep the useful backup. A small recovery journal protects both game-save slots if writes fail or are interrupted. Startup and autosave repair a pending transaction before continuing.
 
 Desktop Chrome and Chrome touch emulation are the local browser targets. Real mobile devices, Safari, gamepads and screen-reader-only completion have not been verified. Camera overhead changes are intentionally immediate when necessary to keep Gizmo visible. This is a compact, forgiving exploration puzzle, with no combat, inventory economy or multiplayer. It is not an assertion of exhaustive testing or commercial-game depth.
 
 No analytics, remote save service, CDN dependencies or paid assets are used. The public production site only updates after an approved merge to main.
+
+## Playtest note
+
+Michael found the game easy to finish. Difficulty and pacing need a separate design discussion; the replay update does not expand or rebalance the game.

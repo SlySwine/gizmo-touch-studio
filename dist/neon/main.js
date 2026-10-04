@@ -8,9 +8,10 @@ import {createNeonScene} from './scene.js';
 import {createNeonCharacter} from './character.js';
 import {createCameraRig} from './camera.js';
 import {createWorldAudio} from './audio.js';
+import {createJourneyStorage} from './journey-storage.js';
 const $=id=>document.getElementById(id),canvas=$('world'),coarse=matchMedia('(pointer:coarse)').matches;
 const SAVE_KEY='gizmo-neon-wilds-v1', embedded=parent!==window;
-let model,world,character,ready=false,paused=false,muted=false,runToggle=false,jump=false,tracked='jellies',celebrated=false,saveBlocked=false;
+let model,world,character,journeys,ready=false,paused=false,muted=false,runToggle=false,jump=false,tracked='jellies',celebrated=false,saveBlocked=false;
 try{muted=localStorage.getItem('gizmo-sound-enabled')==='false';}catch{}
 let time=0,last=0,saveAt=0,hudAt=0,commentUntil=0,moved=0,resizePending=true;
 let introBounce=false,rideCamera=null,arrivalCamera=null;
@@ -39,7 +40,7 @@ function showCelebration(){
  $('celebration').querySelector('p').textContent=model.state.traversal?.gardenAwake?'The garden is blooming. The hidden echoes are still out there.':'New paths are awake. The moon garden is waiting.';
  celebrated=true;$('celebration').showModal();clearInput();
 }
-function save(){if(!model)return;try{localStorage.setItem(SAVE_KEY,JSON.stringify(model.serialize()));saveBlocked=false;}catch{saveBlocked=true;}$('save-note').textContent=saveBlocked?'Saving unavailable in this browser.':'Your journey saves here.';}
+function save(){if(!model)return;try{journeys?.getBackup();localStorage.setItem(SAVE_KEY,JSON.stringify(model.serialize()));saveBlocked=false;}catch{saveBlocked=true;}$('save-note').textContent=saveBlocked?'Saving unavailable in this browser.':'Your journey saves here.';}
 function tone(kind,power){audio.play(kind,power);}
 function unlock(){audio.unlock();}
 function events(list=[]){world?.handleEvents?.(list);for(const event of list){
@@ -72,7 +73,7 @@ function releaseCharge(){if(chargeInput.held){chargeInput.held=false;chargeInput
 function action(){if(!ready||paused)return;chargeInput.held=false;chargeInput.release=false;chargeInput.cancel=true;unlock();events(model.interact());syncHUD();}
 function recover(){if(!ready)return;clearInput();rideCamera=arrivalCamera=null;events(model.recover());initialCamera=true;save();syncHUD();}
 function closeMap(){$('map-dialog').close();canvas.focus({preventScroll:true});clearInput();}
-function syncBackup(){try{$('restore-journey').hidden=!localStorage.getItem(SAVE_KEY+'-previous');}catch{$('restore-journey').hidden=true;}}
+function syncBackup(){try{$('restore-journey').hidden=!journeys?.getBackup();}catch{$('restore-journey').hidden=true;}}
 function toggleMap(){syncBackup();if($('map-dialog').open)closeMap();else{clearInput();$('map-dialog').showModal();drawMap();}}
 function setTrack(id){
  tracked=id;world?.demonstrate?.(id);
@@ -84,13 +85,34 @@ function setTrack(id){
 }
 $('interact').addEventListener('click',action);$('recover').addEventListener('click',recover);$('map-toggle').addEventListener('click',toggleMap);$('map-close').addEventListener('click',closeMap);
 $('map-dialog').addEventListener('close',clearInput);
-$('new-journey').addEventListener('click',()=>{$('map-dialog').close();$('restart-dialog').showModal();clearInput();});
+let restartOrigin='game',restartInvoker=null;
+function openRestart(event){
+ if(!ready||paused)return;
+ restartOrigin=$('celebration').open?'finale':$('map-dialog').open?'map':'game';restartInvoker=event.currentTarget;
+ $('map-dialog').close();$('celebration').close();$('restart-error').hidden=true;$('restart-error').textContent='';
+ $('restart-dialog').returnValue='';$('restart-dialog').showModal();clearInput();
+}
+for(const id of ['restart-game','play-again','new-journey'])$(id).addEventListener('click',openRestart);
+function acceptJourney(snapshot){
+ model=createNeonModel(layout,snapshot);refreshIntroduction();celebrated=!!model.state.completed;initialCamera=true;clearInput();
+ saveBlocked=false;saveAt=time;$('save-note').textContent='Your journey saves here.';
+}
 $('restore-journey').addEventListener('click',()=>{
- let backup;try{backup=JSON.parse(localStorage.getItem(SAVE_KEY+'-previous'));if(!backup||backup.version!==1||backup.worldId!==layout.id)throw Error('Invalid backup');localStorage.setItem(SAVE_KEY+'-previous',JSON.stringify(model.serialize()));}catch{$('save-note').textContent='The backup could not be restored. Your current journey is safe.';return;}
- model=createNeonModel(layout,backup);refreshIntroduction();celebrated=!!model.state.completed;initialCamera=true;clearInput();save();closeMap();setTrack(nextJourneyGoal(model.state));syncHUD();comment('Back to your previous adventure.');
+ let backup;try{backup=journeys.restore(model.serialize());}catch{$('save-note').textContent='Could not switch journeys. Try again; your current adventure is still here.';return;}
+ acceptJourney(backup);closeMap();setTrack(nextJourneyGoal(model.state));syncHUD();comment('Back to your previous adventure.');
 });
-$('restart-cancel').addEventListener('click',()=>{$('restart-dialog').close();canvas.focus();});
-$('restart-confirm').addEventListener('click',()=>{try{localStorage.setItem(SAVE_KEY+'-previous',JSON.stringify(model.serialize()));}catch{$('restart-dialog').querySelector('p').textContent='A backup could not be saved. Your current journey is still here.';return;}model=createNeonModel(layout);refreshIntroduction();celebrated=false;tracked='jellies';initialCamera=true;orbit.yaw=0;orbit.pitch=.28;clearInput();save();$('restart-dialog').close();setTrack('jellies');syncHUD();canvas.focus();});$('celebration').addEventListener('close',clearInput);
+$('restart-cancel').addEventListener('click',()=>$('restart-dialog').close('cancel'));
+$('restart-dialog').addEventListener('close',()=>{
+ clearInput();
+ if($('restart-dialog').returnValue==='replay'){canvas.focus();return;}
+ if(restartOrigin==='finale')$('celebration').showModal();
+ else if(restartOrigin==='map')toggleMap();
+ restartInvoker?.focus({preventScroll:true});
+});
+$('restart-confirm').addEventListener('click',()=>{
+ let fresh;try{fresh=journeys.reset(model.serialize());}catch{$('restart-error').textContent='Could not start again right now. Your current adventure is still here. Please try again.';$('restart-error').hidden=false;return;}
+ acceptJourney(fresh);tracked='jellies';orbit.yaw=0;orbit.pitch=.28;$('restart-dialog').close('replay');setTrack('jellies');syncHUD();comment('Here we go again.');
+});$('celebration').addEventListener('close',clearInput);
 $('keep-exploring').addEventListener('click',()=>{$('celebration').close();canvas.focus();});
 $('hop').addEventListener('pointerdown',e=>{e.preventDefault();if(chargeInput.pointerId!==null)return;chargeInput.pointerId=e.pointerId;$('hop').setPointerCapture(e.pointerId);beginCharge();});
 $('hop').addEventListener('pointerup',e=>{if(e.pointerId!==chargeInput.pointerId)return;chargeInput.pointerId=null;releaseCharge();});
@@ -171,7 +193,10 @@ function updateCamera(dt,s){
 }
 function resize(){const w=innerWidth,h=innerHeight;renderer.setSize(w,h,false);composer.setSize(w,h);camera.aspect=w/h;camera.updateProjectionMatrix();resizePending=false;clearInput();}
 window.addEventListener('resize',()=>resizePending=true);
-async function start(){try{layout=await fetch('./neon/world.json').then(r=>{if(!r.ok)throw Error('World layout unavailable');return r.json();});let saved;try{saved=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');}catch{}model=createNeonModel(layout,saved);celebrated=!!model.state.completed;
+async function start(){try{layout=await fetch('./neon/world.json').then(r=>{if(!r.ok)throw Error('World layout unavailable');return r.json();});
+ journeys=createJourneyStorage({storage:{getItem:key=>localStorage.getItem(key),setItem:(key,value)=>localStorage.setItem(key,value),removeItem:key=>localStorage.removeItem(key)},key:SAVE_KEY,layout});
+ try{journeys.getBackup();}catch{}
+ let saved;try{saved=JSON.parse(localStorage.getItem(SAVE_KEY)||'null');}catch{}model=createNeonModel(layout,saved);celebrated=!!model.state.completed;
  refreshIntroduction();
  [world,character]=await Promise.all([createNeonScene({scene,renderer,layout,coarse,camera}),createNeonCharacter({scene,coarse})]);if(pendingGroom)character.setGroom(pendingGroom);
  cameraRig=createCameraRig(camera,world.occluders);ready=true;resize();$('loading').hidden=true;canvas.focus({preventScroll:true});try{$('tutorial').hidden=localStorage.getItem('gizmo-neon-controls-seen')==='true';}catch{}syncSound();setTrack(saved?nextJourneyGoal(model.state):'jellies');comment(saved?'Welcome back. The sanctuary remembers.':'Three sleeping paths. Let’s wake this place up.',8);if(embedded)parent.postMessage({type:'neon-ready'},location.origin);syncHUD();

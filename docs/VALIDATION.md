@@ -4,11 +4,19 @@ This records the bounded audit of the sanctuary polish preview. It does not esta
 
 ## Repository checks
 
-`node --test scripts/test-neon-*.mjs` passes **39 tests**: 34 model, three camera and two audio lifecycle tests. `node scripts/validate-site.mjs` checks JavaScript syntax, 40 local references, both self-contained GLBs, Studio toolbar order and the shared Blender/model layout hash. `git diff --check` passes.
+`node --test scripts/test-neon-*.mjs` passes **54 tests**: 34 model, three camera, two audio lifecycle and 15 journey-storage tests. `node scripts/validate-site.mjs` checks JavaScript syntax, 42 local references, both self-contained GLBs, Studio toolbar order and the shared Blender/model layout hash. `git diff --check` passes.
 
 Model coverage includes all six quest orders, every echo, ordinary movement, collision and bounds, ramps and deck edges, safe checkpoints, recovery with cargo/followers, save sanitation and older version-one saves. Charged flight predictions match actual unsteered releases near walls, bounds, gates and raised surfaces at 30, 60, 120 and 144 Hz. Holding a charge keeps the world clock and companions moving. Repeated input stress exercises 12,000 mixed-movement frames and 6,000 charged-flight/cancel frames. Visible Spire seals prevent charge-assisted progression skips.
 
 Both transport routes run in both directions; early/late step-off, reload during a ride and safe recovery preserve progress. The lift rises clear of its terrace wall before moving across. Tests cover the conditional prism crossing, all three route petals, the garden interaction and optional airborne chimes. Audio tests verify suspended contexts disconnect current and scheduled voices, avoiding stale sounds on resume. These do not verify audible quality.
+
+## Replay follow-up
+
+The visible header Restart and finale Play Again controls share an accessible confirmation. **29 isolated browser checks pass** for confirm/cancel, keyboard and Escape focus return, repeated replay, reload, map restore, failed backup/active-save writes, actual Studio grooming and mute retention, and touch layouts at 393×852, 320×640 and 844×390. The touch target is at least 44 pixels high. No runtime or missing-asset failures remained. The finale test uses an isolated fixture derived from an earned completed journey, placed at its final interaction; it is not claimed as another full playthrough. Michael’s browser/profile and save were never used by this QA.
+
+Fifteen storage tests cover every partial quest state, repeated blank resets, older/malformed saves, both backup and active-save failures, blocked rollback, interrupted transaction recovery and untouched preferences. A useful previous journey survives repeated replay. A pending journal is recovered before startup reads and ordinary autosaves. Test-harness startup/dialog waits were corrected after early attempts; the final browser pass waits for the actual ready/close events.
+
+[Play Again at the finale](previews/neon-play-again.png) · [Restart on touch](previews/neon-restart-touch.png)
 
 ## Browser play and visual review
 

@@ -4,6 +4,15 @@
 
 dialog footer{gap:8px;flex-wrap:wrap}#restore-journey[hidden]{display:none}
 
+#restart-game{min-height:44px;font-size:12px;color:#ffd4e7;border-color:#c994ad66;padding:0 15px}
+.replay-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:24px}
+#play-again,#celebration #keep-exploring{min-height:44px;padding:12px 20px;margin:0;font-size:13px}
+#play-again{background:#c0ffec;color:#092b31}
+#celebration #keep-exploring{background:#11172bba;color:#edf8ff}
+#restart-error{color:#ffd4e7}#restart-error[hidden]{display:none}
+@media(max-width:1000px){nav{position:relative}#restart-game{position:absolute;top:calc(100% + 8px);right:0}}
+@media(max-width:360px){header{padding:16px 12px}.wordmark{font-size:22px}.wordmark span{font-size:6px;letter-spacing:2px}nav{gap:4px}nav button{padding:0 8px;min-width:36px}#journey{left:12px}}
+
 #hop{--charge:0%;width:94px;display:flex;align-items:center;justify-content:center;gap:6px;position:relative;overflow:hidden;background:linear-gradient(90deg,#5ad9c552 var(--charge),#11172bba var(--charge));touch-action:none;user-select:none;-webkit-user-select:none}
 #hop i{font-style:normal;font-size:22px;transition:transform .12s}#hop span{font-size:11px;letter-spacing:.2px}#hop[data-charging=true]{border-color:#baffeb;color:#d2fff0;box-shadow:0 0 18px #50efd335}#hop[data-charging=true] i{transform:scale(1.2,.7)}
 #map-quests button:last-child:nth-child(odd){grid-column:1/-1}
