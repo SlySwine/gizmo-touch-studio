@@ -308,7 +308,7 @@ export function createGizmoSound() {
       finish(active);
       const now = context.currentTime;
       const continuing = kind === 'brush' ? Array.from(voices).find(voice =>
-        voice.tail && !voice.cleaned && voice.remaining === 2 && now < voice.tailUntil - .04) : null;
+        voice.tail && !voice.cleaned && voice.remaining === voice.sources.length && now < voice.tailUntil - .04) : null;
       for (const voice of voices) if (voice.tail && voice !== continuing) finish(voice);
       if (continuing) {
         // Continue the same purr across strokes instead of layering new tails.
@@ -319,7 +319,6 @@ export function createGizmoSound() {
         continuing.lastUpdate = now;
         hold(continuing.body.source.frequency, now);
         breathe(continuing.body, now, continuing.body.gain.gain.value);
-        breathe(continuing.fuzz, now, continuing.fuzz.gain.gain.value);
         active = continuing;
         events.begin++;
         return true;
@@ -327,8 +326,11 @@ export function createGizmoSound() {
       const voice = newVoice(kind, pan);
       if (!voice) return false;
       const brushing = kind === 'brush';
-      voice.fuzz = sourceFor(voice, 'noise', 0, brushing ? 380 : 650);
-      start(voice.fuzz, now, .34);
+      // Brushing is a clean voiced hum; a noise bed reads as static here.
+      if (!brushing) {
+        voice.fuzz = sourceFor(voice, 'noise', 0, 650);
+        start(voice.fuzz, now, .34);
+      }
       voice.body = sourceFor(voice, brushing ? 'purr' : 'voice', brushing ? 94 : kind === 'turn' ? 155 : 105, brushing ? 360 : 3200);
       if (!brushing) vowel(voice.body, kind === 'pull' ? 440 : 280, kind === 'turn' ? 1400 : 850);
       start(voice.body, now, .34);
@@ -381,9 +383,6 @@ export function createGizmoSound() {
         hold(voice.body.source.frequency, now);
         voice.body.source.frequency.setTargetAtTime(94 + energy * 8 + Math.sin(now * 3.4 + phase) * .6, now, .14);
         breathe(voice.body, now, Math.pow(energy, .6) * .095 * pulse);
-        breathe(voice.fuzz, now, Math.pow(energy, .8) * .022);
-        hold(voice.fuzz.filter.frequency, now);
-        voice.fuzz.filter.frequency.setTargetAtTime(320 + energy * 160, now, .12);
       } else {
         hold(voice.body.source.frequency, now);
         voice.body.source.frequency.setTargetAtTime(155 + move * 55 + Math.sin(now * 12) * 3, now, .04);
@@ -430,14 +429,12 @@ export function createGizmoSound() {
       voice.tailStartedAt = now;
       voice.tailUntil = now + 1.45;
       // Enjoy the last stroke for half a second, then settle gently to silence.
-      // Reuse both sources; their native stop times also bound an unattended tail.
-      for (const layer of [voice.body, voice.fuzz]) {
-        const level = layer.gain.gain.value;
-        hold(layer.gain.gain, now);
-        layer.gain.gain.setValueAtTime(level, now + .5);
-        layer.gain.gain.linearRampToValueAtTime(0, now + 1.4);
-        layer.source.stop(voice.tailUntil);
-      }
+      // Reuse the voiced source; its native stop time bounds an unattended tail.
+      const layer = voice.body, level = layer.gain.gain.value;
+      hold(layer.gain.gain, now);
+      layer.gain.gain.setValueAtTime(level, now + .5);
+      layer.gain.gain.linearRampToValueAtTime(0, now + 1.4);
+      layer.source.stop(voice.tailUntil);
       hold(voice.body.source.frequency, now);
       voice.body.source.frequency.setTargetAtTime(94, now, .45);
       return true;
