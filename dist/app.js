@@ -17,7 +17,10 @@ let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let outerFurCount=0,hatContact,undercoatGeo;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, maxSurfaceDeform=0, frame=0, idleReturn=0;
 const slapSettings=document.querySelector('#slap-settings'),slapPowerInput=document.querySelector('#slap-power'),slapPowerOutput=document.querySelector('#slap-power-value');
-const DEFAULT_SLAP_POWER=.55,MAX_DISPLACEMENT=3.1;
+const brushSettings=document.querySelector('#brush-settings'),brushSizeInput=document.querySelector('#brush-size'),brushSizeOutput=document.querySelector('#brush-size-value');
+const DEFAULT_SLAP_POWER=.55,DEFAULT_BRUSH_SIZE=50,MAX_DISPLACEMENT=3.1;
+let brushSize=DEFAULT_BRUSH_SIZE,brushRadius=.62;
+const brushCursorPoint=new THREE.Vector3(0,1.9,1.2),brushCursorView=new THREE.Vector3(),brushCursorScale=new THREE.Vector3();
 let slapPower=DEFAULT_SLAP_POWER,slapCount=0;
 const attachments=[],eyes=[], nodes=[],pickable=[];
 const HAT_OFFSET=new THREE.Vector3(-.32,-.16,0);
@@ -72,10 +75,16 @@ const sc=shadowCanvas.getContext('2d');const sg=sc.createRadialGradient(64,64,3,
 sg.addColorStop(0,'rgba(0,0,0,.65)');sg.addColorStop(.5,'rgba(0,0,0,.34)');sg.addColorStop(1,'rgba(0,0,0,0)');sc.fillStyle=sg;sc.fillRect(0,0,128,128);
 const shadow=new THREE.Mesh(new THREE.PlaneGeometry(6.9,4.8),new THREE.MeshBasicMaterial({map:new THREE.CanvasTexture(shadowCanvas),transparent:true,depthWrite:false}));shadow.rotation.x=-Math.PI/2;shadow.position.set(0,-.005,0);scene.add(shadow);
 const floor=new THREE.Mesh(new THREE.CircleGeometry(2.9,96),new THREE.MeshBasicMaterial({color:0x503169,transparent:true,opacity:.16,depthWrite:false}));floor.rotation.x=-Math.PI/2;floor.position.y=-.01;scene.add(floor);
+// Background depth lets pulled fur always occlude both translucent ground layers.
+for(const [layer,order] of [[floor,-2],[shadow,-1]]){
+  layer.renderOrder=order;layer.material.depthTest=true;
+  layer.material.onBeforeCompile=shader=>{shader.vertexShader=shader.vertexShader.replace('#include <project_vertex>','#include <project_vertex>\ngl_Position.z=gl_Position.w*.999999;');};
+  layer.material.customProgramCacheKey=()=> 'gizmo-background-depth-v1';
+}
 
 function fail(text){loading.classList.remove('hidden');loading.innerHTML='';const p=document.createElement('p');p.className='error';p.textContent=text;loading.append(p);}
 function setMood(text){if(mood.textContent!==text)mood.textContent=text;}
-function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);camera.updateProjectionMatrix();endGesture();}
+function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);camera.updateProjectionMatrix();endGesture();updateBrushCursor();}
 new ResizeObserver(resize).observe(stage);
 
 const noiseCanvas=document.createElement('canvas');noiseCanvas.width=128;noiseCanvas.height=128;
@@ -218,7 +227,17 @@ const toolNames=['poke','pull','brush','turn','slap'];
 function syncSlapControls(){slapSettings.hidden=tool!=='slap';document.querySelector('[data-tool="slap"]').setAttribute('aria-expanded',String(tool==='slap'));const percent=Math.round(slapPower*100);slapPowerInput.value=String(percent);slapPowerInput.setAttribute('aria-valuetext',percent+' percent');slapPowerOutput.value=percent+'%';}
 function setSlapPower(value){const percent=Number(value);slapPower=Number.isFinite(percent)?THREE.MathUtils.clamp(Math.round(percent/5)*5,10,100)/100:DEFAULT_SLAP_POWER;syncSlapControls();}
 slapPowerInput.addEventListener('input',e=>setSlapPower(e.target.value));syncSlapControls();
-function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, turn, or slap.');endGesture();sound.stop();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');syncSlapControls();setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':tool==='slap'?'A little slap? I am mostly fluff.':'Perfectly unbothered.');idleReturn=time+4;}
+function updateBrushCursor(point){
+  if(point)brushCursorPoint.copy(point);
+  camera.updateMatrixWorld();brushCursorView.copy(brushCursorPoint).applyMatrix4(camera.matrixWorldInverse);
+  const scale=rig?rig.getWorldScale(brushCursorScale).x:1;
+  const diameter=brushRadius*scale*canvas.clientHeight/(Math.max(.1,-brushCursorView.z)*Math.tan(THREE.MathUtils.degToRad(camera.fov*.5)));
+  cursor.style.setProperty('--brush-diameter',diameter+'px');
+}
+function syncBrushControls(){brushSettings.hidden=tool!=='brush';document.querySelector('[data-tool="brush"]').setAttribute('aria-expanded',String(tool==='brush'));brushSizeInput.value=String(brushSize);brushSizeInput.setAttribute('aria-valuetext',brushSize+' percent');brushSizeOutput.value=brushSize+'%';updateBrushCursor();}
+function setBrushSize(value){const percent=Number(value);brushSize=Number.isFinite(percent)?THREE.MathUtils.clamp(Math.round(percent/5)*5,10,100):DEFAULT_BRUSH_SIZE;brushRadius=.62*brushSize/DEFAULT_BRUSH_SIZE;syncBrushControls();}
+brushSizeInput.addEventListener('input',e=>setBrushSize(e.target.value));syncBrushControls();
+function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, turn, or slap.');endGesture();sound.stop();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');syncSlapControls();syncBrushControls();setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':tool==='slap'?'A little slap? I am mostly fluff.':'Perfectly unbothered.');idleReturn=time+4;}
 
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
 function reset(){
@@ -226,7 +245,7 @@ function reset(){
   wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);squash.value=squash.velocity=0;hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;
   for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}
   if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
-  groomed=0;response=0;responseTarget=0;brushJoy=0;slapCount=0;setSlapPower(DEFAULT_SLAP_POWER*100);
+  groomed=0;response=0;responseTarget=0;brushJoy=0;slapCount=0;setSlapPower(DEFAULT_SLAP_POWER*100);setBrushSize(DEFAULT_BRUSH_SIZE);
   reaction.at=reaction.lastPoke=-100;reaction.pokes=0;reaction.kind='idle';reaction.strength=0;reaction.gaze.set(0,0);
   expression.surprise=expression.annoyance=expression.blink=expression.pleased=0;expression.label='sleepy';eyeFeel.set(0,0,0,0);maxDeform=maxSurfaceDeform=0;
   if(rig){rig.position.set(0,-1.8,0);rig.rotation.set(0,0,0);rig.scale.set(1,1,1);pivot.rotation.set(0,0,0);}
@@ -235,7 +254,7 @@ function reset(){
 document.querySelector('#reset').addEventListener('click',e=>{unlockSound(e);reset();if(e.isTrusted)sound.reset();});
 
 function ray(e){const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(pointer,camera);cursor.style.left=(e.clientX-r.left)+'px';cursor.style.top=(e.clientY-r.top)+'px';}
-function pick(e){if(!loaded)return null;ray(e);scene.updateMatrixWorld(true);return raycaster.intersectObjects(pickable,false)[0]||null;}
+function pick(e){if(!loaded)return null;ray(e);scene.updateMatrixWorld(true);const hit=raycaster.intersectObjects(pickable,false)[0]||null;if(tool==='brush'&&hit?.object===body)updateBrushCursor(hit.point);return hit;}
 function hover(e){const hit=pick(e),hat=!!hit&&hit.object!==body;stage.classList.toggle('hat-hover',hat&&e.pointerType!=='touch');cursor.style.opacity=hit&&!hat&&e.pointerType!=='touch'&&tool!=='turn'?'1':'0';}
 function contact(e,hit=pick(e)){if(!hit||hit.object!==body)return null;const local=body.worldToLocal(hit.point.clone());const face=hit.face;const p=body.geometry.attributes.position;
   const a=new THREE.Vector3().fromBufferAttribute(p,face.a),b=new THREE.Vector3().fromBufferAttribute(p,face.b),c=new THREE.Vector3().fromBufferAttribute(p,face.c);
@@ -302,11 +321,16 @@ function moveGesture(e){
   }
   if(active.tool==='brush'){
     const hit=contact(e),dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);active.eventTime=e.timeStamp;
-    if(hit){if(active.last){const delta=hit.point.clone().sub(active.last).clampLength(0,.32);if(delta.length()>.001){active.soundSpeed=Math.min(1,delta.length()/(dt*3.2));pendingBrush={point:hit.point,delta:pendingBrush?pendingBrush.delta.add(delta).clampLength(0,.45):delta};brushJoy=1;}}active.last=hit.point.clone();}else{active.last=null;pendingBrush=null;active.soundSpeed=0;}
+    if(hit){if(active.last){const delta=hit.point.clone().sub(active.last).clampLength(0,.32);if(delta.length()>.001){active.soundSpeed=Math.min(1,delta.length()/(dt*3.2));(pendingBrush??=[]).push({from:active.last.clone(),point:hit.point,delta});brushJoy=1;}}active.last=hit.point.clone();}else{flushBrush();active.last=null;active.soundSpeed=0;}
   }
 }
 
-function groom(point,delta){let affected=0;const len=delta.length();if(len<.0001)return;const dir=delta.clone().normalize();const radius=.62;for(let i=0;i<furCount;i++){const j=i*3;const x=furRoots[j]-point.x,y=furRoots[j+1]-point.y,z=furRoots[j+2]-point.z,d=x*x+y*y+z*z;if(d>radius*radius)continue;const nDot=dir.x*furNormals[j]+dir.y*furNormals[j+1]+dir.z*furNormals[j+2];const w=(1-Math.sqrt(d)/radius)*Math.min(1,len*18);for(let k=0;k<3;k++){const target=(dir.getComponent(k)-nDot*furNormals[j+k])*.24;furGroom[j+k]+=(target-furGroom[j+k])*w;}affected++;}groomed+=affected;furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
+// Keep every stroke segment so quick corners do not turn into diagonal strokes.
+function flushBrush(){if(!pendingBrush)return;for(const stroke of pendingBrush)groom(stroke.point,stroke.delta,stroke.from);pendingBrush=null;}
+function groom(point,delta,from=point){let affected=0;const len=delta.length();if(len<.0001)return;const dir=delta.clone().normalize(),radius=brushRadius;
+  // Sweep between pointer samples so a fine brush leaves a continuous stroke.
+  const sx=point.x-from.x,sy=point.y-from.y,sz=point.z-from.z,segmentLengthSq=sx*sx+sy*sy+sz*sz;
+  for(let i=0;i<furCount;i++){const j=i*3;let x=furRoots[j]-from.x,y=furRoots[j+1]-from.y,z=furRoots[j+2]-from.z;const t=segmentLengthSq?THREE.MathUtils.clamp((x*sx+y*sy+z*sz)/segmentLengthSq,0,1):0;x-=sx*t;y-=sy*t;z-=sz*t;const d=x*x+y*y+z*z;if(d>radius*radius)continue;const nDot=dir.x*furNormals[j]+dir.y*furNormals[j+1]+dir.z*furNormals[j+2];const w=(1-Math.sqrt(d)/radius)*Math.min(1,len*18);for(let k=0;k<3;k++){const target=(dir.getComponent(k)-nDot*furNormals[j+k])*.24;furGroom[j+k]+=(target-furGroom[j+k])*w;}affected++;}groomed+=affected;furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
 function endGesture(e){
   if(e&&active&&e.pointerId!==undefined&&e.pointerId!==active.id)return;
   if(active){const gesture=active,id=gesture.id;active=null;
@@ -318,7 +342,7 @@ function endGesture(e){
     }
     if(e?.type==='pointerup')sound.end({release:true,tension:gesture.node?gesture.node.value.length()/2.65:0});else sound.stop();
     if(gesture.node){gesture.node.target.set(0,0,0);if(gesture.tool==='pull'&&e?.type==='pointerup'&&time-gesture.startTime>.05){if(e.timeStamp-gesture.eventTime<120)gesture.node.velocity.addScaledVector(gesture.dragVelocity,.55).clampLength(0,13);squash.velocity=THREE.MathUtils.clamp(squash.velocity+Math.min(1.3,gesture.node.value.length()*.6),-3.2,3.2);wobble.velocity.z+=THREE.MathUtils.clamp(-gesture.node.value.x*.6,-1.3,1.3);wobble.velocity.x+=gesture.node.value.z*.4;wobble.velocity.clampLength(0,2.5);}}
-    if(pendingBrush&&gesture.tool==='brush'){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
+    if(gesture.tool==='brush')flushBrush();
     if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);responseTarget=0;idleReturn=time+3.5;
     setMood(gesture.tool==='turn'?'Admire away.':gesture.tool==='brush'?'Impeccably groomed. Mostly.':gesture.tool==='slap'?(gesture.slapStrength<.35?'Barely ruffled. Mostly.':'Give the fluff a second to settle.'):gesture.tool==='poke'?(reaction.pokes>=3?'I’m counting those.':'You startled me.'):'Back to his usual self.');
   }
@@ -384,7 +408,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     eyeFeel.set(expression.surprise,expression.annoyance,reaction.gaze.x*Math.min(1,expression.surprise+expression.annoyance),reaction.gaze.y*expression.surprise);
     // The Lid meshes are Gizmo's brows; only the pupils close during a blink.
     for(const eye of eyes){const dict=eye.morphTargetDictionary,values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=expression.surprise;values[dict.Smug]=expression.pleased*.95*(1-expression.surprise);values[dict.Blink]=eye.name.includes('Pupil')?expression.blink:0;values[dict.Skeptical]=expression.annoyance*(1-expression.surprise*.6);}
-    if(pendingBrush){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
+    flushBrush();
     for(let s=0;s<steps;s++){wobble.velocity.addScaledVector(wobble.value,-65*h).multiplyScalar(Math.exp(-3.5*h));wobble.value.addScaledVector(wobble.velocity,h).clampLength(0,.2);squash.velocity=(squash.velocity-squash.value*78*h)*Math.exp(-3.6*h);squash.value=THREE.MathUtils.clamp(squash.value+squash.velocity*h,-.22,.22);}
     // Orientation changes only during an explicit Turn/hat drag or Turn keyboard action.
     pivot.rotation.set(orbit.pitch,orbit.yaw,0);
@@ -400,7 +424,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,slapPower,slapCount,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,tool,slapPower,slapCount,brushSize,brushRadius,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, Turn, or Slap in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});

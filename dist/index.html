@@ -18,14 +18,18 @@
     <div id="cursor" aria-hidden="true"><i></i></div>
   </section>
   <footer class="controls">
-    <div id="slap-settings" class="slap-settings" hidden>
+    <div id="slap-settings" class="tool-settings slap-settings" hidden>
       <label for="slap-power">Slap power</label><output id="slap-power-value" for="slap-power">55%</output>
       <input id="slap-power" type="range" min="10" max="100" step="5" value="55" aria-valuetext="55 percent">
+    </div>
+    <div id="brush-settings" class="tool-settings brush-settings" hidden>
+      <label for="brush-size">Brush size</label><output id="brush-size-value" for="brush-size">50%</output>
+      <input id="brush-size" type="range" min="10" max="100" step="5" value="50" aria-valuetext="50 percent">
     </div>
     <div class="control-row"><div class="tools" role="group" aria-label="Interaction tool">
       <button class="tool active" data-tool="poke" title="Press and hold to squish (1)" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21h8l3-8a2 2 0 0 0-3-2l-2 1V5a2 2 0 0 0-4 0v8l-2-2c-2-2-4 0-2 2l2 3z"/><path d="M5 5H3m5-3L7 1m10 2 1-2"/></svg><span>Poke</span></button>
       <button class="tool" data-tool="pull" title="Drag and release to stretch (2)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l5 5m6 6 5 5M4 9V4h5m6 15h5v-5M9 9c3-2 8 3 6 6s-8-3-6-6z"/></svg><span>Pull</span></button>
-      <button class="tool" data-tool="brush" title="Sweep to groom (3)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 3 6 6-9 9-6-6zM5 14l5 5m-7-3 5 5m-6-2 3 3"/></svg><span>Brush</span></button>
+      <button class="tool" data-tool="brush" aria-controls="brush-settings" aria-expanded="false" title="Sweep to groom (3)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 3 6 6-9 9-6-6zM5 14l5 5m-7-3 5 5m-6-2 3 3"/></svg><span>Brush</span></button>
       <button class="tool" data-tool="turn" aria-pressed="false" title="Drag to turn Gizmo (4)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c3-5 13-5 16 0M20 4v4h-4M20 16c-3 5-13 5-16 0M4 20v-4h4"/><ellipse cx="12" cy="12" rx="3" ry="8"/></svg><span>Turn</span></button>
       <button class="tool" data-tool="slap" aria-pressed="false" aria-controls="slap-settings" aria-expanded="false" title="Tap Gizmo to slap (5)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8l4-7V7a1.5 1.5 0 0 0-3 0v5-8a1.5 1.5 0 0 0-3 0v7-9a1.5 1.5 0 0 0-3 0v9-7a1.5 1.5 0 0 0-3 0v10l-2-2c-2-2-4 0-2 2zM3 5l-1-2M5 2V1"/></svg><span>Slap</span></button>
     </div></div>
