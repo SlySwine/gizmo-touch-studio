@@ -269,7 +269,6 @@ export function createGizmoSound() {
         continuing.tail = false;
         continuing.ending = false;
         continuing.lastUpdate = now;
-        continuing.nextGiggle = Math.max(continuing.nextGiggle, now + .6);
         hold(continuing.body.source.frequency, now);
         breathe(continuing.body, now, continuing.body.gain.gain.value);
         breathe(continuing.fuzz, now, continuing.fuzz.gain.gain.value);
@@ -285,7 +284,6 @@ export function createGizmoSound() {
       voice.body = sourceFor(voice, brushing ? 'purr' : 'voice', brushing ? 94 : kind === 'turn' ? 155 : 105, brushing ? 360 : 3200);
       if (!brushing) vowel(voice.body, kind === 'pull' ? 440 : 280, kind === 'turn' ? 1400 : 850);
       start(voice.body, now, .34);
-      voice.nextGiggle = now + random(1.4, 2.6);
       voice.brushEnergy = 0;
       voice.lastUpdate = now;
       voice.purrPhase = random(0, Math.PI * 2);
@@ -338,10 +336,6 @@ export function createGizmoSound() {
         breathe(voice.fuzz, now, Math.pow(energy, .8) * .022);
         hold(voice.fuzz.filter.frequency, now);
         voice.fuzz.filter.frequency.setTargetAtTime(320 + energy * 160, now, .12);
-        if (energy > .35 && now > voice.nextGiggle) {
-          voice.nextGiggle = now + random(2.4, 4.2);
-          giggle(pan, .25);
-        }
       } else {
         hold(voice.body.source.frequency, now);
         voice.body.source.frequency.setTargetAtTime(155 + move * 55 + Math.sin(now * 12) * 3, now, .04);
