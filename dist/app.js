@@ -55,7 +55,7 @@ const key=new THREE.DirectionalLight(0xffd5e4,1.2);key.position.set(-4,6,6);scen
 const blueBack=new THREE.PointLight(0x155aff,38,14,2);blueBack.position.set(-2.4,1.8,-2.2);scene.add(blueBack);
 const violetBack=new THREE.PointLight(0x7007bf,38,14,2);violetBack.position.set(2.4,1.8,-2.2);scene.add(violetBack);
 const fill=new THREE.DirectionalLight(0xff83bc,.25);fill.position.set(-4,1,0);scene.add(fill);
-const hairLight=new THREE.SpotLight(0xcbd5ff,45,14,.62,.6,2);
+const hairLight=new THREE.SpotLight(0xcbd5ff,33.75,14,.62,.6,2);
 hairLight.position.set(.4,6.2,-2);hairLight.target.position.set(0,2.2,0);scene.add(hairLight,hairLight.target);
 const hairLightDirection=new THREE.Vector3().subVectors(hairLight.target.position,hairLight.position).normalize();
 
@@ -165,7 +165,7 @@ function makeFur(){
       float facing=smoothstep(-.10,.65,dot(litNormal,hairL));
       float tipLight=smoothstep(.20,.95,t)*facing*(1.0-underHat*.92);
       float hairCatch=tipLight*(.20+.80*strandHighlight)*spotCone/(1.0+.05*dot(hairD,hairD));
-      vColor+=hairLightColor*hairCatch*2.2;
+      vColor+=hairLightColor*hairCatch*1.65;
       gl_Position=projectionMatrix*modelViewMatrix*vec4(displacedP,1.0);
     }`,fragmentShader:`varying vec3 vColor;varying float vT;void main(){gl_FragColor=vec4(vColor,1.0);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(';#include',';\n#include')});
   fur=new THREE.Mesh(furGeo,mat);fur.frustumCulled=false;rig.add(fur);

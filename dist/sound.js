@@ -7,7 +7,7 @@ export function createGizmoSound() {
   const voices = new Set();
   const events = { unlock: 0, poke: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
   let enabled = true, available = !!AudioContextClass, disposed = false;
-  let context = null, master = null, limiter = null, noise = null, voiceWave = null, active = null;
+  let context = null, master = null, limiter = null, noise = null, voiceWave = null, purrWave = null, active = null;
   let resumePromise = null, lastPoke = -Infinity;
   try { enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false'; } catch (_) { /* Storage may be private. */ }
 
@@ -87,6 +87,9 @@ export function createGizmoSound() {
     const real = new Float32Array(25), imaginary = new Float32Array(25);
     for (let i = 1; i < imaginary.length; i++) imaginary[i] = 1 / Math.pow(i, 1.12);
     voiceWave = context.createPeriodicWave(real, imaginary);
+    // A rounded hum with just a little warmth from its first few harmonics.
+    // Keep this separate from the brighter vowel source used for creature calls.
+    purrWave = context.createPeriodicWave(new Float32Array(5), new Float32Array([0, 1, .18, .045, .01]));
     context.onstatechange = () => {
       if (context && context.state !== 'running') stop();
     };
@@ -141,6 +144,7 @@ export function createGizmoSound() {
     if (type === 'noise') { source.buffer = noise; source.loop = true; }
     else {
       if (type === 'voice') source.setPeriodicWave(voiceWave);
+      else if (type === 'purr') source.setPeriodicWave(purrWave);
       else source.type = type;
       source.frequency.setValueAtTime(frequency, context.currentTime);
     }
@@ -255,12 +259,16 @@ export function createGizmoSound() {
       const voice = newVoice(kind, pan);
       if (!voice) return false;
       const now = context.currentTime;
-      voice.fuzz = sourceFor(voice, 'noise', 0, kind === 'brush' ? 1500 : 650);
+      const brushing = kind === 'brush';
+      voice.fuzz = sourceFor(voice, 'noise', 0, brushing ? 380 : 650);
       start(voice.fuzz, now, .34);
-      voice.body = sourceFor(voice, 'voice', kind === 'turn' ? 155 : 105, 3200);
-      vowel(voice.body, kind === 'pull' ? 440 : 280, kind === 'turn' ? 1400 : 850);
+      voice.body = sourceFor(voice, brushing ? 'purr' : 'voice', brushing ? 94 : kind === 'turn' ? 155 : 105, brushing ? 360 : 3200);
+      if (!brushing) vowel(voice.body, kind === 'pull' ? 440 : 280, kind === 'turn' ? 1400 : 850);
       start(voice.body, now, .34);
       voice.nextGiggle = now + random(1.4, 2.6);
+      voice.brushEnergy = 0;
+      voice.lastUpdate = now;
+      voice.purrPhase = random(0, Math.PI * 2);
       voice.tension = 0;
       active = voice;
       events.begin++;
@@ -294,17 +302,31 @@ export function createGizmoSound() {
         breathe(voice.body, now, stretch * .19 + move * .045);
         breathe(voice.fuzz, now, stretch * .035 + move * .03);
         voice.fuzz.filter.frequency.setTargetAtTime(350 + stretch * 800, now, .06);
-      } else {
-        const brushing = voice.kind === 'brush';
+      } else if (voice.kind === 'brush') {
+        // Smooth hand-speed changes, and pulse the volume instead of buzzing
+        // the pitch. Slow, shallow drift keeps the low hum feeling alive.
+        const elapsed = clamp(now - voice.lastUpdate, 0, .15);
+        voice.lastUpdate = now;
+        voice.brushEnergy += (move - voice.brushEnergy) * (1 - Math.exp(-elapsed / .11));
+        const energy = voice.brushEnergy;
+        const phase = voice.purrPhase;
+        const pulse = .86 + Math.sin(now * 14.5 + phase + Math.sin(now * 1.8) * .15) * .11;
         hold(voice.body.source.frequency, now);
-        voice.body.source.frequency.setTargetAtTime((brushing ? 112 : 155) + move * (brushing ? 22 : 55) + Math.sin(now * (brushing ? 32 : 12)) * 3, now, .04);
-        breathe(voice.body, now, Math.pow(move, .6) * (brushing ? .18 : .13));
-        breathe(voice.fuzz, now, Math.pow(move, .7) * (brushing ? .13 : .08));
-        if (brushing && move > .35 && now > voice.nextGiggle) {
+        voice.body.source.frequency.setTargetAtTime(94 + energy * 8 + Math.sin(now * 3.4 + phase) * .6, now, .14);
+        breathe(voice.body, now, Math.pow(energy, .6) * .095 * pulse);
+        breathe(voice.fuzz, now, Math.pow(energy, .8) * .022);
+        hold(voice.fuzz.filter.frequency, now);
+        voice.fuzz.filter.frequency.setTargetAtTime(320 + energy * 160, now, .12);
+        if (energy > .35 && now > voice.nextGiggle) {
           voice.nextGiggle = now + random(2.4, 4.2);
           giggle(pan, .25);
         }
-        voice.fuzz.filter.frequency.setTargetAtTime((brushing ? 750 : 350) + move * (brushing ? 1900 : 950), now, .06);
+      } else {
+        hold(voice.body.source.frequency, now);
+        voice.body.source.frequency.setTargetAtTime(155 + move * 55 + Math.sin(now * 12) * 3, now, .04);
+        breathe(voice.body, now, Math.pow(move, .6) * .13);
+        breathe(voice.fuzz, now, Math.pow(move, .7) * .08);
+        voice.fuzz.filter.frequency.setTargetAtTime(350 + move * 950, now, .06);
       }
       return true;
     });
