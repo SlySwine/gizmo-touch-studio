@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
 import { createGizmoSound } from './sound.js';
+import { createHatContactMap } from './fur-contact.js';
 
 const canvas=document.querySelector('#canvas'), stage=document.querySelector('.stage');
 const loading=document.querySelector('#loading'), mood=document.querySelector('#mood');
@@ -13,12 +14,14 @@ soundButton.addEventListener('click',toggleSound);syncSoundButton();
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTime=0;
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
+let outerFurCount=0,hatContact,undercoatGeo;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, maxSurfaceDeform=0, frame=0, idleReturn=0;
 const slapSettings=document.querySelector('#slap-settings'),slapPowerInput=document.querySelector('#slap-power'),slapPowerOutput=document.querySelector('#slap-power-value');
 const DEFAULT_SLAP_POWER=.55,MAX_DISPLACEMENT=3.1;
 let slapPower=DEFAULT_SLAP_POWER,slapCount=0;
 const attachments=[],eyes=[], nodes=[],pickable=[];
 const HAT_OFFSET=new THREE.Vector3(-.32,-.16,0);
+const hatSpringOffset=new THREE.Vector3();
 const MAX=6;
 const orbit={yaw:0,pitch:0,vx:0,vy:0};
 const wobble={value:new THREE.Vector3(),velocity:new THREE.Vector3()};
@@ -33,7 +36,7 @@ for(const n of nodes)nodeVelocities.push(n.velocity);
 let nextNode=0, response=0, responseTarget=0, brushJoy=0;
 const expression={surprise:0,annoyance:0,blink:0,pleased:0,label:'sleepy'};
 const reaction={at:-100,lastPoke:-100,pokes:0,kind:'idle',strength:0,gaze:new THREE.Vector2()};
-const eyeFeel=new THREE.Vector4();
+const eyeFeel=new THREE.Vector4(),furBlink={value:0};
 function react(kind,point){
   reaction.at=time;reaction.kind=kind;
   if(kind==='poke'){reaction.pokes=time-reaction.lastPoke<4?reaction.pokes+1:1;reaction.lastPoke=time;brushJoy=0;}
@@ -86,41 +89,62 @@ function field(x,y,z,out){out.set(0,0,0);for(const n of nodes){const dx=x-n.cent
 new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
   rig=gltf.scene;pivot=new THREE.Group();pivot.position.y=1.8;pivot.rotation.order='YXZ';scene.add(pivot);pivot.add(rig);rig.position.y=-1.8;rig.name='Gizmo';
   rig.traverse(o=>{if(!o.isMesh)return;o.frustumCulled=false;
-    if(o.name==='Body'){body=o;bodyGeometry=o.geometry;base=new Float32Array(o.geometry.attributes.position.array);o.material=new THREE.MeshStandardMaterial({color:0xe82c85,roughness:1,bumpMap:noiseTexture,bumpScale:.035});}
+    if(o.name==='Body'){body=o;bodyGeometry=o.geometry;base=new Float32Array(o.geometry.attributes.position.array);
+      // The export has no UVs. Give the fallback fleece grain a stable surface map.
+      const uv=new Float32Array(base.length/3*2);for(let i=0;i<base.length;i+=3){const x=base[i],y=base[i+1]-1.9,z=base[i+2],r=Math.max(.001,Math.hypot(x,y,z));uv[i/3*2]=.5+Math.atan2(x,z)/(Math.PI*2);uv[i/3*2+1]=.5+Math.asin(THREE.MathUtils.clamp(y/r,-1,1))/Math.PI;}
+      o.geometry.setAttribute('uv',new THREE.BufferAttribute(uv,2));o.material=new THREE.MeshStandardMaterial({color:0xd92377,roughness:1,bumpMap:noiseTexture,bumpScale:.018});}
     else if(o.name.startsWith('Hat')){o.position.add(HAT_OFFSET);o.material=new THREE.MeshStandardMaterial({color:o.name==='HatBand'?0x171322:0x10101b,roughness:o.name==='HatBand'?.63:.94,bumpMap:noiseTexture,bumpScale:.025});attachments.push({mesh:o,anchor:new THREE.Vector3(-1,3.37,0).add(HAT_OFFSET),original:o.position.clone()});}
     else if(o.name.startsWith('Eye')){o.material=new THREE.MeshStandardMaterial({color:0x05030a,roughness:1});o.geometry.computeBoundingBox();const center=o.geometry.boundingBox.getCenter(new THREE.Vector3());o.material.onBeforeCompile=shader=>{shader.uniforms.eyeFeel={value:eyeFeel};shader.uniforms.eyeCenter={value:center};shader.uniforms.eyePupil={value:o.name.includes('Pupil')?1:0};shader.uniforms.centers={value:uCenter};shader.uniforms.displacements={value:uDisplace};shader.uniforms.radii={value:uRadius};shader.vertexShader='uniform vec4 eyeFeel;uniform vec3 eyeCenter;uniform float eyePupil;uniform vec3 centers[6];uniform vec3 displacements[6];uniform float radii[6];\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <skinning_vertex>','#include <skinning_vertex>\nif(eyePupil>0.5){transformed.x=eyeCenter.x+(transformed.x-eyeCenter.x)*(1.0+eyeFeel.x*.55)+eyeFeel.z*.085;transformed.y=eyeCenter.y+(transformed.y-eyeCenter.y)*(1.0+eyeFeel.x*.38)+eyeFeel.w*.055;}else{transformed.y+=eyeFeel.x*.17;}vec3 originalEye=transformed;for(int i=0;i<6;i++){vec3 d=originalEye-centers[i];transformed+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}');};o.material.customProgramCacheKey=()=> 'gizmo-expressive-eyes';eyes.push(o);}
   });
   if(!body)throw new Error('Body missing from character asset');
-  pickable.push(body,...attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');resize();
+  pickable.push(body,...attachments.map(a=>a.mesh));hatContact=createHatContactMap(attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');resize();
 },undefined,error=>{console.error(error);fail('Gizmo could not load. Please refresh to try again.');});
 
 function makeFur(){
-  furCount=coarse?85000:145000;
+  outerFurCount=coarse?85000:145000;furCount=outerFurCount*4;
   const g=body.geometry,positions=g.attributes.position,normals=g.attributes.normal,idx=g.index;
   const faces=idx?idx.count/3:positions.count/3,cumulative=new Float32Array(faces);let sum=0;
   const a=new THREE.Vector3(),b=new THREE.Vector3(),c=new THREE.Vector3(),ab=new THREE.Vector3(),ac=new THREE.Vector3();
   for(let f=0;f<faces;f++){a.fromBufferAttribute(positions,idx?idx.getX(f*3):f*3);b.fromBufferAttribute(positions,idx?idx.getX(f*3+1):f*3+1);c.fromBufferAttribute(positions,idx?idx.getX(f*3+2):f*3+2);sum+=ab.subVectors(b,a).cross(ac.subVectors(c,a)).length()*.5;cumulative[f]=sum;}
-  furRoots=new Float32Array(furCount*3);furNormals=new Float32Array(furCount*3);furGroom=new Float32Array(furCount*3);furSeeds=new Float32Array(furCount);
+  furRoots=new Float32Array(furCount*3);furNormals=new Float32Array(furCount*3);furGroom=new Float32Array(furCount*3);furSeeds=new Float32Array(furCount);const coat=new Float32Array(furCount);
   const na=new THREE.Vector3(),nb=new THREE.Vector3(),nn=new THREE.Vector3();
   for(let s=0;s<furCount;s++){
     const target=rand()*sum;let lo=0,hi=faces-1;while(lo<hi){const mid=(lo+hi)>>1;if(cumulative[mid]<target)lo=mid+1;else hi=mid;}const f=lo;
     const ia=idx?idx.getX(f*3):f*3,ib=idx?idx.getX(f*3+1):f*3+1,ic=idx?idx.getX(f*3+2):f*3+2;
     const sq=Math.sqrt(rand()),u=1-sq,v=rand()*sq,w=1-u-v;
     a.fromBufferAttribute(positions,ia);b.fromBufferAttribute(positions,ib);c.fromBufferAttribute(positions,ic);a.multiplyScalar(u).addScaledVector(b,v).addScaledVector(c,w).toArray(furRoots,s*3);
-    na.fromBufferAttribute(normals,ia);nb.fromBufferAttribute(normals,ib);nn.fromBufferAttribute(normals,ic);na.multiplyScalar(u).addScaledVector(nb,v).addScaledVector(nn,w).normalize().toArray(furNormals,s*3);furSeeds[s]=rand();
+    na.fromBufferAttribute(normals,ia);nb.fromBufferAttribute(normals,ib);nn.fromBufferAttribute(normals,ic);na.multiplyScalar(u).addScaledVector(nb,v).addScaledVector(nn,w).normalize().toArray(furNormals,s*3);furSeeds[s]=rand();coat[s]=s>=outerFurCount?1:0;
   }
   furGeo=new THREE.InstancedBufferGeometry();
-  const blade=[];for(let j=0;j<2;j++){const t=j/2,t1=(j+1)/2;blade.push(-1,t,0,1,t,0,-1,t1,0,1,t,0,1,t1,0,-1,t1,0);}
+  // Reuse ribbon vertices so the second coat does not double vertex shading cost.
+  const blade=[];for(let j=0;j<=2;j++)blade.push(-1,j/2,0,1,j/2,0);furGeo.setIndex([0,1,2,1,3,2,2,3,4,3,5,4]);
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
-  furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
-  furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},blueBackPosition:{value:blueBack.position},violetBackPosition:{value:violetBack.position},hairLightPosition:{value:hairLight.position},hairLightDirection:{value:hairLightDirection},hairLightColor:{value:hairLight.color},hairCone:{value:new THREE.Vector2(Math.cos(hairLight.angle),Math.cos(hairLight.angle*(1-hairLight.penumbra)))}},vertexShader:`
-    attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
+  furGeo.setAttribute('coat',new THREE.InstancedBufferAttribute(coat.subarray(0,outerFurCount),1));
+  furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots.subarray(0,outerFurCount*3),3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals.subarray(0,outerFurCount*3),3));
+  furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom.subarray(0,outerFurCount*3),3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds.subarray(0,outerFurCount),1));furGeo.instanceCount=outerFurCount;
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},blueBackPosition:{value:blueBack.position},violetBackPosition:{value:violetBack.position},furBlink,hatContactMap:{value:hatContact.texture},hatContactBounds:{value:hatContact.bounds},hatHeightRange:{value:hatContact.heightRange},hatCenter:{value:hatContact.center},hatSpringOffset:{value:hatSpringOffset},hairLightPosition:{value:hairLight.position},hairLightDirection:{value:hairLightDirection},hairLightColor:{value:hairLight.color},hairCone:{value:new THREE.Vector2(Math.cos(hairLight.angle),Math.cos(hairLight.angle*(1-hairLight.penumbra)))}},vertexShader:`
+    attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;attribute float coat;
     uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;uniform vec3 hatOffset;
     uniform mat3 furNormalMatrix;uniform vec3 blueBackPosition;uniform vec3 violetBackPosition;
     uniform vec3 hairLightPosition;uniform vec3 hairLightDirection;uniform vec3 hairLightColor;uniform vec2 hairCone;
+    uniform float furBlink;uniform sampler2D hatContactMap;uniform vec4 hatContactBounds;uniform vec2 hatHeightRange;uniform vec3 hatCenter;uniform vec3 hatSpringOffset;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
+    float eyeDistance(vec3 p){
+      float dx=abs(abs(p.x-eyeFeel.z*.085)-.736);
+      float browY=2.465+eyeFeel.x*.30+(p.x<0.0?.075:-.020)*eyeFeel.y;
+      float lid=length(vec2(max(abs(abs(p.x)-.736)-mix(.402,.18,eyeFeel.x),0.0),p.y-browY))-mix(.145,.17,eyeFeel.x);
+      vec2 pupilSize=vec2(.165*(1.0+eyeFeel.x*.77)*mix(1.0,.98,furBlink),.245*(1.0+eyeFeel.x*.85)*mix(1.0,.035,furBlink));
+      float pupil=(length(vec2(dx,p.y-2.265-furBlink*.19084-eyeFeel.w*.055)/pupilSize)-1.0)*min(pupilSize.x,pupilSize.y);
+      return min(lid,pupil);
+    }
+    vec3 hatSurface(vec3 p){
+      vec2 uv=(p.xz-hatContactBounds.xy)/hatContactBounds.zw;
+      float inside=step(0.0,uv.x)*step(0.0,uv.y)*step(uv.x,1.0)*step(uv.y,1.0);
+      vec4 contact=texture2D(hatContactMap,clamp(uv,vec2(0.0),vec2(1.0)));
+      float height=hatHeightRange.x+dot(contact.rg,vec2(65280.0,255.0))/65535.0*hatHeightRange.y;
+      return vec3(height,inside*step(.5,contact.b),inside*contact.a);
+    }
     float backlight(vec3 lightPosition,vec3 worldP,vec3 N,vec3 V,float edge){
       vec3 D=lightPosition-worldP;vec3 L=normalize(D);
       float transmission=pow(max(dot(-L,V),0.0),4.0);
@@ -131,29 +155,39 @@ function makeFur(){
       float t=position.y;vT=t;vec3 n=hairNormal;
       vec3 tangent=normalize(cross(n,abs(n.y)<.9?vec3(0,1,0):vec3(1,0,0)));
       vec3 bitangent=cross(n,tangent);
-      float angle=seed*62.83;vec3 curl=(tangent*cos(angle)+bitangent*sin(angle))*(.030+seed*.064);
-      float dx=abs(abs(root.x-eyeFeel.z*.085)-.736);
-      float browY=2.465+eyeFeel.x*.30+(root.x<0.0?.075:-.020)*eyeFeel.y;
-      float lid=length(vec2(max(abs(abs(root.x)-.736)-mix(.402,.18,eyeFeel.x),0.0),root.y-browY))-mix(.145,.17,eyeFeel.x);
-      float pupil=(length(vec2(dx/(.165*(1.0+eyeFeel.x*.77)),(root.y-2.265-eyeFeel.w*.055)/(.245*(1.0+eyeFeel.x*.85))))-1.0)*.165;
-      float trim=root.z>1.0?mix(.02,1.0,smoothstep(-.015,.115,min(lid,pupil)-.03)):1.0;
-      float underHat=(1.0-smoothstep(.84,1.12,length(vec2((root.x-hatOffset.x+.995)/1.35,(root.z-hatOffset.z-.04)/1.03))))*smoothstep(2.72+hatOffset.y,2.98+hatOffset.y,root.y);
-      trim*=mix(1.0,.05,underHat);
-      curl*=trim;float len=mix(.09+seed*.105,.24+(seed-.75)*.30,step(.75,seed))*trim;float laid=clamp(length(groom)*3.5,0.0,.72);
-      vec3 inertia=hairWind;
-      for(int i=0;i<6;i++){vec3 d=root-centers[i];inertia-=velocities[i]*.013*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}
-      inertia-=n*dot(n,inertia);inertia=clamp(inertia,vec3(-.13),vec3(.13));
-      vec3 gravity=vec3(0,-1,0)+n*n.y;
-      vec3 p=root+n*(.008+len*t*(1.0-laid))+(curl+gravity*len*.35)*t*t+(groom+inertia)*t*t*trim;
+      float angle=seed*62.83;vec3 curl=(tangent*cos(angle)+bitangent*sin(angle))*mix(.030+seed*.064,.012+seed*.022,coat);
       vec3 viewDir=normalize(localCamera-root);
-      vec3 side=normalize(cross(n+groom*7.0,viewDir)+vec3(.0001));
-      p+=side*position.x*(.0043+seed*.0018)*(1.0-t*.96);
-      vec3 displacedP=displace(p);vec3 worldP=(modelMatrix*vec4(displacedP,1.0)).xyz;
+      float angleClearance=(1.0-coat)*min(.16,abs(viewDir.x)*.19+abs(viewDir.y)*.07);
+      float faceDistance=eyeDistance(root)-angleClearance;
+      // Short pile reaches nearer both black eye shapes; their cores stay clear.
+      float trim=root.z>1.0?mix(.02,1.0,smoothstep(-.008,mix(.115,.032,coat),faceDistance-mix(.015,.003,coat))):1.0;
+      curl*=trim;float len=mix(mix(.09+seed*.105,.24+(seed-.75)*.30,step(.75,seed)),(.035+pow(seed,.7)*.045)*(.88+.12*sin(root.x*13.0+root.y*11.0)*sin(root.z*15.0-root.x*3.0)),coat)*trim;
+      vec3 grooming=groom*mix(1.0,.16,coat);float laid=clamp(length(grooming)*3.5,0.0,.72);
+      vec3 inertia=hairWind,displacedRoot=root;
+      for(int i=0;i<6;i++){vec3 d=root-centers[i];float w=exp(-dot(d,d)/(2.0*radii[i]*radii[i]));inertia-=velocities[i]*.013*w;displacedRoot+=displacements[i]*w;}
+      inertia-=n*dot(n,inertia);inertia=clamp(inertia,vec3(-.13),vec3(.13))*mix(1.0,.22,coat);
+      vec3 hatRoot=displacedRoot-hatOffset-hatSpringOffset;vec3 contact=hatSurface(hatRoot);
+      float underHat=contact.z*(1.0-smoothstep(.015,.28,contact.x-hatRoot.y));
+      vec3 outward=normalize(vec3(hatRoot.x-hatCenter.x,0.0,hatRoot.z-hatCenter.z)+vec3(.0001,0,.0001));
+      outward=normalize(outward-n*dot(outward,n)+vec3(.0001));
+      vec3 gravity=vec3(0,-1,0)+n*n.y;
+      vec3 bend=(curl+gravity*len*.35)*mix(1.0,.30,underHat)+(grooming+inertia)*trim+outward*len*underHat*.92;
+      float upright=(1.0-laid)*(1.0-underHat*.94);
+      vec3 p=root+n*(.006+len*t*upright)+bend*t*t;
+      vec3 side=normalize(cross(n+grooming*7.0+outward*underHat,viewDir)+vec3(.0001));
+      p+=side*position.x*mix(.0043+seed*.0018,.009+seed*.004,coat)*(1.0-t*.96);
+      // Keep crossing strand tips behind the black eye/brow surfaces, not in a bald collar.
+      if(p.z>1.0&&eyeDistance(p)<.005)p.z=min(p.z,1.14);
+      vec3 displacedP=displace(p);
+      // Final contact includes the ribbon width and follows the hat's rigid motion.
+      vec3 hatP=displacedP-hatOffset-hatSpringOffset;vec3 ceiling=hatSurface(hatP);
+      if(ceiling.y>.5)displacedP.y=min(displacedP.y,ceiling.x+hatOffset.y+hatSpringOffset.y-.022);
+      vec3 worldP=(modelMatrix*vec4(displacedP,1.0)).xyz;
       vec3 litNormal=normalize(furNormalMatrix*n);float light=max(dot(litNormal,normalize(vec3(-.5,.8,1.0))),0.0);
       vec3 pink=mix(vec3(.36,.005,.09),vec3(.98,.10,.40),.38+light*.62);
-      vColor=pink*(.67+seed*.37)*(.66+t*.46)*.38;
+      vColor=pink*(.67+seed*.37)*(.66+t*.46)*.38*mix(1.0,.78,coat);
       vec3 V=normalize(cameraPosition-worldP);float edge=pow(max(0.0,1.0-abs(dot(litNormal,V))),3.0);
-      float tips=mix(.18,1.0,smoothstep(.05,.85,t))*(.8+seed*.3);
+      float tips=mix(.18,1.0,smoothstep(.05,.85,t))*(.8+seed*.3)*mix(1.0,.32,coat);
       float blueRim=backlight(blueBackPosition,worldP,litNormal,V,edge)*tips;
       float violetRim=backlight(violetBackPosition,worldP,litNormal,V,edge)*tips;
       float rimSum=blueRim+violetRim;
@@ -161,18 +195,23 @@ function makeFur(){
       // Saturated blue/violet transmission catches the tips above the dimmer front light.
       vColor=mix(vColor,rimColor/max(rimSum,.001),clamp(rimSum*4.5,0.0,.96))+rimColor*.65;
       // A separate overhead/back light follows the actual bent and groomed fiber direction.
-      vec3 fiberT=n*len*(1.0-laid)+2.0*t*(curl+gravity*len*.35+(groom+inertia)*trim);
+      vec3 fiberT=n*len*upright+2.0*t*bend;
+      fiberT=mix(fiberT,displacedP-displacedRoot+vec3(0,.00001,0),underHat);
       vec3 T=normalize(mat3(modelMatrix)*fiberT);
       vec3 hairD=hairLightPosition-worldP;vec3 hairL=normalize(hairD);vec3 H=normalize(hairL+V);
       float strandHighlight=pow(max(0.0,1.0-dot(T,H)*dot(T,H)),12.0);
       float spotCone=smoothstep(hairCone.x,hairCone.y,dot(-hairL,hairLightDirection));
       float facing=smoothstep(-.10,.65,dot(litNormal,hairL));
-      float tipLight=smoothstep(.20,.95,t)*facing*(1.0-underHat*.92);
+      float tipLight=smoothstep(.20,.95,t)*facing*(1.0-underHat*.92)*mix(1.0,.20,coat);
       float hairCatch=tipLight*(.20+.80*strandHighlight)*spotCone/(1.0+.05*dot(hairD,hairD));
       vColor+=hairLightColor*hairCatch*1.65;
       gl_Position=projectionMatrix*modelViewMatrix*vec4(displacedP,1.0);
     }`,fragmentShader:`varying vec3 vColor;varying float vT;void main(){gl_FragColor=vec4(vColor,1.0);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(';#include',';\n#include')});
   fur=new THREE.Mesh(furGeo,mat);fur.frustumCulled=false;rig.add(fur);
+  // Short pile needs only one segment; independent roots cover the long-coat gaps.
+  undercoatGeo=furGeo.clone();undercoatGeo.setIndex([0,1,4,1,5,4]);undercoatGeo.instanceCount=furCount-outerFurCount;
+  for(const [name,array,size] of [['root',furRoots,3],['hairNormal',furNormals,3],['groom',furGroom,3],['seed',furSeeds,1],['coat',coat,1]]){const attr=new THREE.InstancedBufferAttribute(array.subarray(outerFurCount*size),size);if(name==='groom')attr.setUsage(THREE.DynamicDrawUsage);undercoatGeo.setAttribute(name,attr);}
+  const undercoat=new THREE.Mesh(undercoatGeo,mat);undercoat.frustumCulled=false;undercoat.name='Short plush undercoat';rig.add(undercoat);
 }
 
 const toolNames=['poke','pull','brush','turn','slap'];
@@ -186,7 +225,7 @@ function reset(){
   endGesture();sound.stop();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;
   wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);squash.value=squash.velocity=0;hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;
   for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}
-  if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;}
+  if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
   groomed=0;response=0;responseTarget=0;brushJoy=0;slapCount=0;setSlapPower(DEFAULT_SLAP_POWER*100);
   reaction.at=reaction.lastPoke=-100;reaction.pokes=0;reaction.kind='idle';reaction.strength=0;reaction.gaze.set(0,0);
   expression.surprise=expression.annoyance=expression.blink=expression.pleased=0;expression.label='sleepy';eyeFeel.set(0,0,0,0);maxDeform=maxSurfaceDeform=0;
@@ -267,7 +306,7 @@ function moveGesture(e){
   }
 }
 
-function groom(point,delta){let affected=0;const len=delta.length();if(len<.0001)return;const dir=delta.clone().normalize();const radius=.62;for(let i=0;i<furCount;i++){const j=i*3;const x=furRoots[j]-point.x,y=furRoots[j+1]-point.y,z=furRoots[j+2]-point.z,d=x*x+y*y+z*z;if(d>radius*radius)continue;const nDot=dir.x*furNormals[j]+dir.y*furNormals[j+1]+dir.z*furNormals[j+2];const w=(1-Math.sqrt(d)/radius)*Math.min(1,len*18);for(let k=0;k<3;k++){const target=(dir.getComponent(k)-nDot*furNormals[j+k])*.24;furGroom[j+k]+=(target-furGroom[j+k])*w;}affected++;}groomed+=affected;furGeo.attributes.groom.needsUpdate=true;}
+function groom(point,delta){let affected=0;const len=delta.length();if(len<.0001)return;const dir=delta.clone().normalize();const radius=.62;for(let i=0;i<furCount;i++){const j=i*3;const x=furRoots[j]-point.x,y=furRoots[j+1]-point.y,z=furRoots[j+2]-point.z,d=x*x+y*y+z*z;if(d>radius*radius)continue;const nDot=dir.x*furNormals[j]+dir.y*furNormals[j+1]+dir.z*furNormals[j+2];const w=(1-Math.sqrt(d)/radius)*Math.min(1,len*18);for(let k=0;k<3;k++){const target=(dir.getComponent(k)-nDot*furNormals[j+k])*.24;furGroom[j+k]+=(target-furGroom[j+k])*w;}affected++;}groomed+=affected;furGeo.attributes.groom.needsUpdate=true;if(undercoatGeo)undercoatGeo.attributes.groom.needsUpdate=true;}
 function endGesture(e){
   if(e&&active&&e.pointerId!==undefined&&e.pointerId!==active.id)return;
   if(active){const gesture=active,id=gesture.id;active=null;
@@ -327,6 +366,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     for(const n of nodes){if(displacementScale<1){n.value.multiplyScalar(displacementScale);n.velocity.multiplyScalar(displacementScale);}if(n.value.lengthSq()+n.velocity.lengthSq()>.000001)moving=true;max=Math.max(max,n.value.length());}maxDeform=max;
     if(moving||dirtyBody||frame%20===0){const arr=bodyGeometry.attributes.position.array;maxSurfaceDeform=0;for(let i=0;i<base.length;i+=3){field(base[i],base[i+1],base[i+2],temp);maxSurfaceDeform=Math.max(maxSurfaceDeform,temp.length());arr[i]=base[i]+temp.x;arr[i+1]=base[i+1]+temp.y;arr[i+2]=base[i+2]+temp.z;}bodyGeometry.attributes.position.needsUpdate=true;if(frame%3===0)bodyGeometry.computeVertexNormals();bodyGeometry.computeBoundingSphere();dirtyBody=false;}
     for(const a of attachments){field(a.anchor.x,a.anchor.y,a.anchor.z,temp);a.mesh.position.copy(a.original).add(temp);}
+    if(attachments.length)hatSpringOffset.copy(attachments[0].mesh.position).sub(attachments[0].original);
     const age=time-reaction.at,heldPoke=active?.tool==='poke',heldPull=active?.tool==='pull';
     brushJoy=Math.max(0,brushJoy-dt*.20);
     const slapped=reaction.kind==='slap';
@@ -338,11 +378,12 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     expression.annoyance+=(annoyance-expression.annoyance)*Math.min(1,dt*8);
     expression.pleased+=(brushJoy-expression.pleased)*Math.min(1,dt*7);
     const idleBlink=!active&&Math.sin(time*.79)>.998?Math.pow((Math.sin(time*.79)-.998)/.002,1.4):0;
-    expression.blink=Math.max(flinch,idleBlink*(1-expression.surprise));
+    expression.blink=Math.max(flinch,idleBlink*(1-expression.surprise));furBlink.value=expression.blink;
     expression.label=expression.blink>.45?'flinch':expression.surprise>.6?(heldPull?'alarmed':'startled'):expression.pleased>.4?'pleased':expression.annoyance>.32?'annoyed':'sleepy';
     response=expression.surprise;
     eyeFeel.set(expression.surprise,expression.annoyance,reaction.gaze.x*Math.min(1,expression.surprise+expression.annoyance),reaction.gaze.y*expression.surprise);
-    for(const eye of eyes){const dict=eye.morphTargetDictionary,values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=expression.surprise;values[dict.Smug]=expression.pleased*.95*(1-expression.surprise);values[dict.Blink]=expression.blink;values[dict.Skeptical]=expression.annoyance*(1-expression.surprise*.6);}
+    // The Lid meshes are Gizmo's brows; only the pupils close during a blink.
+    for(const eye of eyes){const dict=eye.morphTargetDictionary,values=eye.morphTargetInfluences;if(!dict||!values)continue;values[dict.Surprised]=expression.surprise;values[dict.Smug]=expression.pleased*.95*(1-expression.surprise);values[dict.Blink]=eye.name.includes('Pupil')?expression.blink:0;values[dict.Skeptical]=expression.annoyance*(1-expression.surprise*.6);}
     if(pendingBrush){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     for(let s=0;s<steps;s++){wobble.velocity.addScaledVector(wobble.value,-65*h).multiplyScalar(Math.exp(-3.5*h));wobble.value.addScaledVector(wobble.velocity,h).clampLength(0,.2);squash.velocity=(squash.velocity-squash.value*78*h)*Math.exp(-3.6*h);squash.value=THREE.MathUtils.clamp(squash.value+squash.velocity*h,-.22,.22);}
     // Orientation changes only during an explicit Turn/hat drag or Turn keyboard action.
@@ -359,7 +400,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,slapPower,slapCount,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,tool,slapPower,slapCount,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, Turn, or Slap in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
