@@ -5,10 +5,10 @@ export function createGizmoSound() {
   const MAX_VOICES = 8;
   const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
   const voices = new Set();
-  const events = { unlock: 0, poke: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
+  const events = { unlock: 0, poke: 0, slap: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
   let enabled = true, available = !!AudioContextClass, disposed = false;
   let context = null, master = null, limiter = null, noise = null, voiceWave = null, purrWave = null, active = null;
-  let resumePromise = null, lastPoke = -Infinity;
+  let resumePromise = null, lastPoke = -Infinity, lastSlap = -Infinity;
   try { enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false'; } catch (_) { /* Storage may be private. */ }
 
   const clamp = (value, low = 0, high = 1) => Math.min(high, Math.max(low, Number.isFinite(value) ? value : low));
@@ -254,6 +254,54 @@ export function createGizmoSound() {
     });
   }
 
+  function slap({ strength = .55, pan = 0 } = {}) {
+    return attempt(() => {
+      const now = context.currentTime;
+      if (now - lastSlap < .09) { events.dropped++; return false; }
+      for (const voice of voices) if (voice.tail) finish(voice);
+      const voice = newVoice('slap', pan);
+      if (!voice) return false;
+      lastSlap = now;
+      events.slap++;
+      const force = clamp(strength), pitch = random(128, 136) + force * 22;
+      // Power opens a clear percussive slap, with a brief rounded transient.
+      // The shared master/limiter still bounds this louder contact layer.
+      const impact = sourceFor(voice, 'noise', 0, 1700 + Math.pow(force, 1.2) * 5300);
+      impact.filter.frequency.exponentialRampToValueAtTime(1400, now + .03);
+      impact.filter.frequency.exponentialRampToValueAtTime(420, now + .10);
+      const impactGain = impact.gain.gain, impactPeak = .24 + force * .82;
+      impactGain.setValueAtTime(0, now);
+      impactGain.linearRampToValueAtTime(impactPeak, now + .004 - force * .002);
+      impactGain.setValueAtTime(impactPeak, now + .008 + force * .006);
+      impactGain.exponentialRampToValueAtTime(impactPeak * .18, now + .04);
+      impactGain.exponentialRampToValueAtTime(.0001, now + .115);
+      impactGain.linearRampToValueAtTime(0, now + .13);
+      start(impact, now, .14);
+      // A separate rounded "Oh!": more power means a wider surprised pitch
+      // leap and a longer open vowel, rather than the poke's short grunt.
+      const voiceStart = now + .07, duration = .27 + force * .4;
+      const peakPitch = Math.min(286, pitch * (1.14 + force * .78));
+      const body = sourceFor(voice, 'voice', pitch, 2500);
+      vowel(body, 450, 850, 2200, voiceStart);
+      body.source.frequency.setValueAtTime(pitch, voiceStart);
+      body.source.frequency.exponentialRampToValueAtTime(peakPitch, voiceStart + .055 + force * .045);
+      body.source.frequency.exponentialRampToValueAtTime(peakPitch * .92, voiceStart + duration * .43);
+      body.source.frequency.exponentialRampToValueAtTime(104 + force * 18, voiceStart + duration * .88);
+      body.formants[0].frequency.setTargetAtTime(460 + force * 85, voiceStart + .055, .04);
+      body.formants[0].frequency.setTargetAtTime(340, voiceStart + duration * .48, .10);
+      body.formants[1].frequency.setTargetAtTime(730, voiceStart + duration * .48, .10);
+      const gain = body.gain.gain, peak = .24 + force * .28;
+      gain.setValueAtTime(0, voiceStart);
+      gain.linearRampToValueAtTime(peak, voiceStart + .018);
+      gain.setValueAtTime(peak, voiceStart + duration * .28);
+      gain.linearRampToValueAtTime(peak * .48, voiceStart + duration * .70);
+      gain.exponentialRampToValueAtTime(.0001, voiceStart + duration - .015);
+      gain.linearRampToValueAtTime(0, voiceStart + duration);
+      start(body, voiceStart, duration + .01);
+      return true;
+    });
+  }
+
   function begin(kind, { pan = 0 } = {}) {
     if (!['pull', 'brush', 'turn'].includes(kind)) return false;
     return attempt(() => {
@@ -446,7 +494,7 @@ export function createGizmoSound() {
   }
 
   return Object.freeze({
-    unlock, setEnabled, poke, begin, update, end, reset, stop, dispose,
+    unlock, setEnabled, poke, slap, begin, update, end, reset, stop, dispose,
     get enabled() { return enabled; },
     get state() {
       return Object.freeze({
