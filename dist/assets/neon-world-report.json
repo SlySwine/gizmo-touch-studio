@@ -1,0 +1,111 @@
+{
+  "asset": "Neon Wilds sanctuary",
+  "generator": "tools/build_neon_world.py",
+  "blender_version": "5.2.1 LTS",
+  "coordinates": "Three.js x/y/z; y-up GLB",
+  "source": "source/neon-world.blend",
+  "glb_bytes": 4376852,
+  "triangle_count": 144848,
+  "meshes": 16,
+  "draw_calls": 16,
+  "materials": [
+    {
+      "name": "Midnight titanium",
+      "roughness": 0.2800000011920929,
+      "emission": 0.0
+    },
+    {
+      "name": "Blue-black ceramic",
+      "roughness": 0.3100000023841858,
+      "emission": 0.0
+    },
+    {
+      "name": "Wet obsidian pavers",
+      "roughness": 0.23000000417232513,
+      "emission": 0.0
+    },
+    {
+      "name": "Wet indigo pavers",
+      "roughness": 0.27000001072883606,
+      "emission": 0.0
+    },
+    {
+      "name": "Pearlescent route alloy",
+      "roughness": 0.25,
+      "emission": 0.0
+    },
+    {
+      "name": "Brushed pale titanium",
+      "roughness": 0.23999999463558197,
+      "emission": 0.0
+    },
+    {
+      "name": "Amethyst architectural enamel",
+      "roughness": 0.23000000417232513,
+      "emission": 0.0
+    },
+    {
+      "name": "Plum conservatory enamel",
+      "roughness": 0.28999999165534973,
+      "emission": 0.0
+    },
+    {
+      "name": "Optical blue crystal",
+      "roughness": 0.11999999731779099,
+      "emission": 0.0
+    },
+    {
+      "name": "Cyan photon strips",
+      "roughness": 0.25,
+      "emission": 2.799999952316284
+    },
+    {
+      "name": "Rose photon strips",
+      "roughness": 0.25,
+      "emission": 2.299999952316284
+    },
+    {
+      "name": "Violet photon strips",
+      "roughness": 0.30000001192092896,
+      "emission": 2.5
+    },
+    {
+      "name": "Amber reactor light",
+      "roughness": 0.23999999463558197,
+      "emission": 2.5
+    },
+    {
+      "name": "Cool white light",
+      "roughness": 0.30000001192092896,
+      "emission": 1.5
+    },
+    {
+      "name": "Holographic fern blades",
+      "roughness": 0.23999999463558197,
+      "emission": 0.4000000059604645
+    },
+    {
+      "name": "Iridescent fern reverse",
+      "roughness": 0.25,
+      "emission": 0.4000000059604645
+    },
+    {
+      "name": "Lucent membrane",
+      "roughness": 0.18000000715255737,
+      "emission": 0.18000000715255737
+    }
+  ],
+  "collision_contract": "Blocking floor scenery exactly matches world.json colliders and surfaces. Decorative vaults/canopies start above 4.5m. Holographic ferns are pass-through. Perimeter lies just outside world bounds.",
+  "features": [
+    "Connected individually beveled paver ground and flush navigation inlays",
+    "Suspended rose/cyan jellyfish conservatory with curved translucent bell and 14 sculpted tentacles",
+    "Blue diamond arcade with three swept titanium vaults and faceted divider",
+    "Amber foundry with detailed finned machine, turbine canopy and socket routes",
+    "Aurora crown with six curved structural ribs, exact continuous ramp and elevated deck",
+    "Seven collision-matched obstacles, holographic fern gardens, occluding secret screens",
+    "Layered cyberwave skyline beyond the traversable boundary",
+    "Two optional elevated secret gardens with exact JSON-authored ramps and decks"
+  ],
+  "spec_id": "neon-wilds-v1",
+  "world_spec_sha256": "55728ac35f7eeb5ebc37377c69c733f1c5a0a8bbeb49eb57be79e2a9ae583735"
+}

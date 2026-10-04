@@ -1,0 +1,330 @@
+{
+  "id": "neon-wilds-v1",
+  "name": "Neon Wilds",
+  "bounds": {
+    "minX": -44,
+    "maxX": 44,
+    "minZ": -46,
+    "maxZ": 38
+  },
+  "spawn": {
+    "x": 0,
+    "z": 14
+  },
+  "districts": [
+    {
+      "id": "hub",
+      "name": "The Atrium",
+      "x": 0,
+      "z": 4,
+      "color": "#64f5ed"
+    },
+    {
+      "id": "jellies",
+      "name": "Lucent Conservatory",
+      "x": -26,
+      "z": -2,
+      "color": "#fc74c3"
+    },
+    {
+      "id": "prisms",
+      "name": "Prism Arcade",
+      "x": 22,
+      "z": -19,
+      "color": "#7cd8ff"
+    },
+    {
+      "id": "engine",
+      "name": "Pulse Foundry",
+      "x": 24,
+      "z": 18,
+      "color": "#ffca71"
+    },
+    {
+      "id": "aurora",
+      "name": "Aurora Spire",
+      "x": 0,
+      "z": -34,
+      "color": "#bba7ff"
+    }
+  ],
+  "objects": [
+    {
+      "id": "guide",
+      "kind": "guide",
+      "x": 0,
+      "z": 6
+    },
+    {
+      "id": "nursery",
+      "kind": "nursery",
+      "x": -26,
+      "z": -1
+    },
+    {
+      "id": "jelly-a",
+      "kind": "jelly",
+      "x": -33,
+      "z": -11
+    },
+    {
+      "id": "jelly-b",
+      "kind": "jelly",
+      "x": -18,
+      "z": -14
+    },
+    {
+      "id": "jelly-c",
+      "kind": "jelly",
+      "x": -35,
+      "z": 8
+    },
+    {
+      "id": "mirror-a",
+      "kind": "mirror",
+      "x": 15,
+      "z": -13
+    },
+    {
+      "id": "mirror-b",
+      "kind": "mirror",
+      "x": 15,
+      "z": -24
+    },
+    {
+      "id": "prism-source",
+      "kind": "source",
+      "x": 10,
+      "z": -13
+    },
+    {
+      "id": "prism-receiver",
+      "kind": "receiver",
+      "x": 28,
+      "z": -24
+    },
+    {
+      "id": "battery-a",
+      "kind": "battery",
+      "x": 19,
+      "z": 23
+    },
+    {
+      "id": "battery-b",
+      "kind": "battery",
+      "x": 31,
+      "z": 12
+    },
+    {
+      "id": "socket-a",
+      "kind": "socket",
+      "x": 23,
+      "z": 17
+    },
+    {
+      "id": "socket-b",
+      "kind": "socket",
+      "x": 27,
+      "z": 17
+    },
+    {
+      "id": "foundry-console",
+      "kind": "console",
+      "x": 25,
+      "z": 22
+    },
+    {
+      "id": "aurora-gate",
+      "kind": "gate",
+      "x": 0,
+      "z": -25
+    },
+    {
+      "id": "aurora-heart",
+      "kind": "heart",
+      "x": 0,
+      "z": -37,
+      "y": 4
+    },
+    {
+      "id": "secret-1",
+      "kind": "secret",
+      "x": -8,
+      "z": 25
+    },
+    {
+      "id": "secret-2",
+      "kind": "secret",
+      "x": -39,
+      "z": -20
+    },
+    {
+      "id": "secret-3",
+      "kind": "secret",
+      "x": 34,
+      "z": -32
+    },
+    {
+      "id": "secret-4",
+      "kind": "secret",
+      "x": 38,
+      "z": 27,
+      "y": 1.1
+    },
+    {
+      "id": "secret-5",
+      "kind": "secret",
+      "x": -12,
+      "z": -39,
+      "y": 2.2
+    },
+    {
+      "id": "secret-6",
+      "kind": "secret",
+      "x": 10,
+      "z": -40
+    }
+  ],
+  "surfaces": [
+    {
+      "id": "spire-ramp",
+      "type": "ramp",
+      "x": 0,
+      "z": -30,
+      "width": 9,
+      "depth": 10,
+      "low": 0,
+      "high": 4,
+      "axis": "-z"
+    },
+    {
+      "id": "spire-deck",
+      "type": "box",
+      "x": 0,
+      "z": -39,
+      "width": 18,
+      "depth": 8,
+      "height": 4
+    },
+    {
+      "id": "maintenance-ramp",
+      "type": "ramp",
+      "x": 36,
+      "z": 32,
+      "width": 4,
+      "depth": 6,
+      "low": 0,
+      "high": 1.1,
+      "axis": "-z"
+    },
+    {
+      "id": "maintenance-deck",
+      "type": "box",
+      "x": 36,
+      "z": 26,
+      "width": 7,
+      "depth": 6,
+      "height": 1.1
+    },
+    {
+      "id": "echo-garden-ramp",
+      "type": "ramp",
+      "x": -13,
+      "z": -33.5,
+      "width": 4,
+      "depth": 6,
+      "low": 0,
+      "high": 2.2,
+      "axis": "-z"
+    },
+    {
+      "id": "echo-garden-deck",
+      "type": "box",
+      "x": -13,
+      "z": -39,
+      "width": 6,
+      "depth": 5,
+      "height": 2.2
+    }
+  ],
+  "colliders": [
+    {
+      "id": "spire-left",
+      "x": -7,
+      "z": -30,
+      "width": 4,
+      "depth": 10,
+      "height": 6
+    },
+    {
+      "id": "spire-right",
+      "x": 7,
+      "z": -30,
+      "width": 4,
+      "depth": 10,
+      "height": 6
+    },
+    {
+      "id": "conservatory-planter",
+      "x": -25,
+      "z": -9,
+      "width": 6,
+      "depth": 3,
+      "height": 2
+    },
+    {
+      "id": "arcade-divider",
+      "x": 22,
+      "z": -18,
+      "width": 2.5,
+      "depth": 8,
+      "height": 3
+    },
+    {
+      "id": "foundry-machine",
+      "x": 25,
+      "z": 12,
+      "width": 5,
+      "depth": 4,
+      "height": 3
+    },
+    {
+      "id": "secret-garden-screen",
+      "x": -10,
+      "z": 23,
+      "width": 3,
+      "depth": 5,
+      "height": 2.3
+    },
+    {
+      "id": "secret-west-screen",
+      "x": -36,
+      "z": -19,
+      "width": 3,
+      "depth": 5,
+      "height": 3
+    }
+  ],
+  "checkpoints": [
+    {
+      "x": 0,
+      "z": 14
+    },
+    {
+      "x": -26,
+      "z": 4
+    },
+    {
+      "x": 19,
+      "z": -8
+    },
+    {
+      "x": 25,
+      "z": 28
+    },
+    {
+      "x": 0,
+      "z": -20
+    }
+  ]
+}

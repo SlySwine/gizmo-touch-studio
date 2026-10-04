@@ -223,7 +223,7 @@ function makeFur(){
   const undercoat=new THREE.Mesh(undercoatGeo,mat);undercoat.frustumCulled=false;undercoat.name='Short plush undercoat';rig.add(undercoat);
 }
 
-const toolNames=['poke','pull','brush','turn','slap'];
+const toolNames=['poke','slap','pull','brush','turn'];
 function syncSlapControls(){slapSettings.hidden=tool!=='slap';document.querySelector('[data-tool="slap"]').setAttribute('aria-expanded',String(tool==='slap'));const percent=Math.round(slapPower*100);slapPowerInput.value=String(percent);slapPowerInput.setAttribute('aria-valuetext',percent+' percent');slapPowerOutput.value=percent+'%';}
 function setSlapPower(value){const percent=Number(value);slapPower=Number.isFinite(percent)?THREE.MathUtils.clamp(Math.round(percent/5)*5,10,100)/100:DEFAULT_SLAP_POWER;syncSlapControls();}
 slapPowerInput.addEventListener('input',e=>setSlapPower(e.target.value));syncSlapControls();
@@ -277,6 +277,7 @@ function performSlap(point,normal,pan=0,direction=null){
   return sound.slap({strength,pan});
 }
 function startGesture(e){
+  if(neonOpen)return;
   if(active||!loaded||e.button!==0)return;
   const picked=pick(e),turning=tool==='turn'||(picked&&picked.object!==body);
   if(!turning&&!picked)return;
@@ -353,6 +354,7 @@ function endGesture(e){
 canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('pointermove',moveGesture);canvas.addEventListener('pointerup',endGesture);canvas.addEventListener('pointercancel',endGesture);canvas.addEventListener('lostpointercapture',endGesture);canvas.addEventListener('pointerleave',()=>{stage.classList.remove('hat-hover');if(!active)cursor.style.opacity='0';});window.addEventListener('blur',()=>endGesture());document.addEventListener('visibilitychange',()=>{if(document.hidden)endGesture();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
 function usesNativeKeys(e){const target=e.target instanceof Element?e.target:document.activeElement;return !!target&&(target.matches('input,textarea,select')||target.isContentEditable);}
 window.addEventListener('keydown',e=>{
+  if(neonOpen)return;
   if(e.altKey||e.ctrlKey||e.metaKey||usesNativeKeys(e))return;
   if(e.key.toLowerCase()==='m'&&!e.repeat){e.preventDefault();toggleSound(e);return;}
   const values={'1':'poke','2':'pull','3':'brush','4':'turn','5':'slap'};
@@ -379,7 +381,7 @@ window.addEventListener('keydown',e=>{
 window.addEventListener('keyup',e=>{if(!usesNativeKeys(e)&&e.key.startsWith('Arrow')&&!active&&tool!=='slap')sound.end({release:true,tension:.35});});
 window.addEventListener('pagehide',e=>{if(e.persisted)sound.stop();else sound.dispose();});
 
-function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;time+=dt;frame++;
+function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;if(neonOpen)return;time+=dt;frame++;
   if(loaded){let moving=false,max=0;
     // Substeps keep the damped spring stable through slow frames and long grabs.
     const steps=Math.max(3,Math.ceil(dt/.008)),h=dt/steps;physicsSteps+=steps;
@@ -429,3 +431,19 @@ const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, Turn, or Slap in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
 register({name:'reset_gizmo',title:'Reset Gizmo',description:'Restore Gizmo’s original shape and clear every brush stroke.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+
+// The Studio stays alive behind the new world, retaining the exact groomed coat.
+let neonOpen=false,neonLoaded=false;
+const neonFrame=document.querySelector('#neon-frame'),neonWrap=document.querySelector('#neon-frame-wrap');
+function sendNeonGroom(){
+  if(!loaded||!neonLoaded)return;
+  const count=Math.min(30000,outerFurCount),roots=new Float32Array(count*3),normals=new Float32Array(count*3),groom=new Float32Array(count*3),seeds=new Float32Array(count);
+  for(let i=0;i<count;i++){const src=Math.floor(i*outerFurCount/count);for(let k=0;k<3;k++){roots[i*3+k]=furRoots[src*3+k];normals[i*3+k]=furNormals[src*3+k];groom[i*3+k]=furGroom[src*3+k];}seeds[i]=furSeeds[src];}
+  neonFrame.contentWindow.postMessage({type:'neon-groom',groom:{roots,normals,groom,seeds}},location.origin);
+}
+function openNeon(updateHash=true){if(!loaded)return;endGesture();sound.stop();neonOpen=true;document.title="Gizmo · Neon Wilds";neonWrap.hidden=false;document.querySelector('#studio').inert=true;if(!neonFrame.getAttribute('src'))neonFrame.src='./play.html';if(neonLoaded){sendNeonGroom();neonFrame.contentWindow.postMessage({type:'neon-resume',muted:!sound.enabled},location.origin);}if(updateHash)history.pushState(null,'','#play');}
+function closeNeon(updateHash=true){neonOpen=false;document.title="Gizmo · Touch Studio";neonWrap.hidden=true;document.querySelector('#studio').inert=false;neonFrame.contentWindow?.postMessage({type:'neon-pause'},location.origin);canvas.focus({preventScroll:true});if(updateHash)history.pushState(null,'','#studio');}
+window.addEventListener('message',event=>{if(event.origin!==location.origin||event.source!==neonFrame.contentWindow)return;if(event.data?.type==='neon-ready'){neonLoaded=true;sendNeonGroom();neonFrame.contentWindow.postMessage({type:neonOpen?'neon-resume':'neon-pause',muted:!sound.enabled},location.origin);}if(event.data?.type==='neon-studio')closeNeon();if(event.data?.type==='neon-sound'){sound.setEnabled(event.data.muted!==true);syncSoundButton();}});
+document.querySelector('#play').addEventListener('click',()=>openNeon());
+window.addEventListener('popstate',()=>{if(location.hash==='#play')openNeon(false);else if(neonOpen)closeNeon(false);});
+if(location.hash==='#play'){const pending=setInterval(()=>{if(loaded){clearInterval(pending);openNeon(false);}},100);}
