@@ -40,10 +40,12 @@ export function createGizmoSound() {
 
   function finish(voice, seconds = .045) {
     if (!voice || voice.cleaned) return;
-    if (voice.ending) {
+    if (voice.ending && !voice.tail) {
       if (context.state !== 'running') cleanup(voice);
       return;
     }
+    // A lingering purr is still interruptible by stop, mute or cancellation.
+    voice.tail = false;
     voice.ending = true;
     if (active === voice) active = null;
     const now = context.currentTime;
@@ -256,9 +258,27 @@ export function createGizmoSound() {
     if (!['pull', 'brush', 'turn'].includes(kind)) return false;
     return attempt(() => {
       finish(active);
+      const now = context.currentTime;
+      const continuing = kind === 'brush' ? Array.from(voices).find(voice =>
+        voice.tail && !voice.cleaned && voice.remaining === 2 && now < voice.tailUntil - .04) : null;
+      for (const voice of voices) if (voice.tail && voice !== continuing) finish(voice);
+      if (continuing) {
+        // Continue the same purr across strokes instead of layering new tails.
+        const fade = clamp(1 - Math.max(0, now - continuing.tailStartedAt - .5) / .9);
+        continuing.brushEnergy *= Math.pow(fade, 1 / .6);
+        continuing.tail = false;
+        continuing.ending = false;
+        continuing.lastUpdate = now;
+        continuing.nextGiggle = Math.max(continuing.nextGiggle, now + .6);
+        hold(continuing.body.source.frequency, now);
+        breathe(continuing.body, now, continuing.body.gain.gain.value);
+        breathe(continuing.fuzz, now, continuing.fuzz.gain.gain.value);
+        active = continuing;
+        events.begin++;
+        return true;
+      }
       const voice = newVoice(kind, pan);
       if (!voice) return false;
-      const now = context.currentTime;
       const brushing = kind === 'brush';
       voice.fuzz = sourceFor(voice, 'noise', 0, brushing ? 380 : 650);
       start(voice.fuzz, now, .34);
@@ -307,7 +327,8 @@ export function createGizmoSound() {
         // the pitch. Slow, shallow drift keeps the low hum feeling alive.
         const elapsed = clamp(now - voice.lastUpdate, 0, .15);
         voice.lastUpdate = now;
-        voice.brushEnergy += (move - voice.brushEnergy) * (1 - Math.exp(-elapsed / .11));
+        const response = move > voice.brushEnergy ? .11 : .6;
+        voice.brushEnergy += (move - voice.brushEnergy) * (1 - Math.exp(-elapsed / response));
         const energy = voice.brushEnergy;
         const phase = voice.purrPhase;
         const pulse = .86 + Math.sin(now * 14.5 + phase + Math.sin(now * 1.8) * .15) * .11;
@@ -352,11 +373,34 @@ export function createGizmoSound() {
   }
 
   function end({ release: shouldRelease = false, tension = 0 } = {}) {
-    if (!active) return false;
+    if (!active) {
+      if (!shouldRelease) for (const voice of voices) if (voice.tail) finish(voice);
+      return false;
+    }
     const voice = active;
     const pan = voice.pan ? voice.pan.pan.value / .65 : 0;
-    finish(voice, .05);
     events.end++;
+    if (shouldRelease && voice.kind === 'brush' && usable() && context.state === 'running') {
+      const now = context.currentTime;
+      active = null;
+      voice.ending = true;
+      voice.tail = true;
+      voice.tailStartedAt = now;
+      voice.tailUntil = now + 1.45;
+      // Enjoy the last stroke for half a second, then settle gently to silence.
+      // Reuse both sources; their native stop times also bound an unattended tail.
+      for (const layer of [voice.body, voice.fuzz]) {
+        const level = layer.gain.gain.value;
+        hold(layer.gain.gain, now);
+        layer.gain.gain.setValueAtTime(level, now + .5);
+        layer.gain.gain.linearRampToValueAtTime(0, now + 1.4);
+        layer.source.stop(voice.tailUntil);
+      }
+      hold(voice.body.source.frequency, now);
+      voice.body.source.frequency.setTargetAtTime(94, now, .45);
+      return true;
+    }
+    finish(voice, .05);
     if (shouldRelease && voice.kind === 'pull') return attempt(() => release(Math.max(clamp(tension), voice.tension), pan));
     return true;
   }
