@@ -3,6 +3,8 @@ import { GLTFLoader } from './vendor/GLTFLoader.js';
 import { createGizmoSound } from './sound.js';
 import { createHatContactMap } from './fur-contact.js';
 import { createGarden } from './garden.js';
+import { loadGardenAssets } from './garden-assets.js';
+import { createGardenRenderer } from './garden-renderer.js';
 
 const canvas=document.querySelector('#canvas'), stage=document.querySelector('.stage');
 const loading=document.querySelector('#loading'), mood=document.querySelector('#mood');
@@ -14,7 +16,7 @@ function toggleSound(e){sound.setEnabled(!sound.enabled);if(sound.enabled)unlock
 soundButton.addEventListener('click',toggleSound);syncSoundButton();
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTime=0;
-let garden=null,studioTool='poke';
+let garden=null,gardenRenderer=null,studioTool='poke';
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
 let outerFurCount=0,hatContact,undercoatGeo;
 let furCount=0, groomed=0, gestureCount=0, maxDeform=0, maxSurfaceDeform=0, frame=0, idleReturn=0;
@@ -62,13 +64,19 @@ catch(e){fail('Gizmo needs WebGL to play. Try a browser with hardware accelerati
 renderer.setPixelRatio(Math.min(devicePixelRatio,coarse?1.5:2));
 renderer.outputColorSpace=THREE.SRGBColorSpace;
 renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.2;
-scene.add(new THREE.HemisphereLight(0xf7d5ec,0x35213f,.75));
+const studioAmbient=new THREE.HemisphereLight(0xf7d5ec,0x35213f,.75);scene.add(studioAmbient);
 const key=new THREE.DirectionalLight(0xffd5e4,1.2);key.position.set(-4,6,6);scene.add(key);
 const blueBack=new THREE.PointLight(0x155aff,38,14,2);blueBack.position.set(-2.4,1.8,-2.2);scene.add(blueBack);
 const violetBack=new THREE.PointLight(0x7007bf,38,14,2);violetBack.position.set(2.4,1.8,-2.2);scene.add(violetBack);
 const fill=new THREE.DirectionalLight(0xff83bc,.25);fill.position.set(-4,1,0);scene.add(fill);
 const hairLight=new THREE.SpotLight(0xcbd5ff,33.75,14,.62,.6,2);
 hairLight.position.set(.4,6.2,-2);hairLight.target.position.set(0,2.2,0);scene.add(hairLight,hairLight.target);
+// Each realm supplies its own light. Fur keeps its strand-level rim response.
+const studioLights=[studioAmbient,key,fill,blueBack,violetBack,hairLight];
+renderer.shadowMap.type=THREE.PCFSoftShadowMap;
+const gardenAssets=loadGardenAssets(renderer);
+// Retain failures until Play is ready; the close-up studio remains usable.
+gardenAssets.catch(()=>{});
 const hairLightDirection=new THREE.Vector3().subVectors(hairLight.target.position,hairLight.position).normalize();
 
 // Soft contact shadow; the character and all visible fibers are live geometry.
@@ -86,7 +94,7 @@ for(const [layer,order] of [[floor,-2],[shadow,-1]]){
 
 function fail(text){loading.classList.remove('hidden');loading.innerHTML='';const p=document.createElement('p');p.className='error';p.textContent=text;loading.append(p);}
 function setMood(text){if(mood.textContent!==text)mood.textContent=text;}
-function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);camera.aspect=r.width/r.height;if(!garden?.active){camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);}camera.updateProjectionMatrix();endGesture();if(garden?.active)garden.update(time,0);updateBrushCursor();}
+function resize(){const r=stage.getBoundingClientRect();renderer.setSize(r.width,r.height,false);gardenRenderer?.resize(r.width,r.height);camera.aspect=r.width/r.height;if(!garden?.active){camera.position.z=Math.max(9.8,9.2/camera.aspect);camera.lookAt(0,2.06,0);}camera.updateProjectionMatrix();endGesture();if(garden?.active)garden.update(time,0);updateBrushCursor();}
 new ResizeObserver(resize).observe(stage);
 
 const noiseCanvas=document.createElement('canvas');noiseCanvas.width=128;noiseCanvas.height=128;
@@ -97,9 +105,9 @@ const noiseTexture=new THREE.CanvasTexture(noiseCanvas);noiseTexture.wrapS=noise
 
 function field(x,y,z,out){out.set(0,0,0);for(const n of nodes){const dx=x-n.center.x,dy=y-n.center.y,dz=z-n.center.z;const w=Math.exp(-(dx*dx+dy*dy+dz*dz)/(2*n.radius*n.radius));out.addScaledVector(n.value,w);}return out;}
 
-new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
+new GLTFLoader().load('./assets/gizmo.glb',async gltf=>{
   rig=gltf.scene;pivot=new THREE.Group();pivot.position.y=1.8;pivot.rotation.order='YXZ';scene.add(pivot);pivot.add(rig);rig.position.y=-1.8;rig.name='Gizmo';
-  rig.traverse(o=>{if(!o.isMesh)return;o.frustumCulled=false;
+  rig.traverse(o=>{if(!o.isMesh)return;o.frustumCulled=false;o.castShadow=true;
     if(o.name==='Body'){body=o;bodyGeometry=o.geometry;base=new Float32Array(o.geometry.attributes.position.array);
       // The export has no UVs. Give the fallback fleece grain a stable surface map.
       const uv=new Float32Array(base.length/3*2);for(let i=0;i<base.length;i+=3){const x=base[i],y=base[i+1]-1.9,z=base[i+2],r=Math.max(.001,Math.hypot(x,y,z));uv[i/3*2]=.5+Math.atan2(x,z)/(Math.PI*2);uv[i/3*2+1]=.5+Math.asin(THREE.MathUtils.clamp(y/r,-1,1))/Math.PI;}
@@ -109,7 +117,13 @@ new GLTFLoader().load('./assets/gizmo.glb',gltf=>{
   });
   if(!body)throw new Error('Body missing from character asset');
   pickable.push(body,...attachments.map(a=>a.mesh));hatContact=createHatContactMap(attachments.map(a=>a.mesh));makeFur();loaded=true;loading.classList.add('hidden');
-  garden=createGarden({scene,camera,pivot,ground:[shadow,floor],lights:[blueBack,violetBack,hairLight],coarse,onTransition:changeView,onEvent:gardenEvent});resize();
+  try{
+    const assets=await gardenAssets;
+    gardenRenderer=createGardenRenderer({renderer,scene,camera,coarse});
+    garden=createGarden({scene,camera,pivot,ground:[shadow,floor],lights:[blueBack,violetBack,hairLight],coarse,assets,onTransition:changeView,onEvent:gardenEvent,onWorldChange:layout=>gardenRenderer.setEnvironment?.(layout)});
+    resize();
+  }catch(error){console.error('World assets failed to load',error);const play=document.querySelector('#play');play.disabled=false;play.title='Worlds could not load. Click to retry.';play.addEventListener('click',()=>location.reload(),{once:true});}
+  resize();
 },undefined,error=>{console.error(error);fail('Gizmo could not load. Please refresh to try again.');});
 
 function makeFur(){
@@ -226,7 +240,7 @@ function makeFur(){
   const undercoat=new THREE.Mesh(undercoatGeo,mat);undercoat.frustumCulled=false;undercoat.name='Short plush undercoat';rig.add(undercoat);
 }
 
-const toolNames=['poke','pull','brush','turn','slap'];
+const toolNames=['poke','slap','pull','brush','turn'];
 function syncSlapControls(){slapSettings.hidden=tool!=='slap';document.querySelector('[data-tool="slap"]').setAttribute('aria-expanded',String(tool==='slap'));const percent=Math.round(slapPower*100);slapPowerInput.value=String(percent);slapPowerInput.setAttribute('aria-valuetext',percent+' percent');slapPowerOutput.value=percent+'%';}
 function setSlapPower(value){const percent=Number(value);slapPower=Number.isFinite(percent)?THREE.MathUtils.clamp(Math.round(percent/5)*5,10,100)/100:DEFAULT_SLAP_POWER;syncSlapControls();}
 slapPowerInput.addEventListener('input',e=>setSlapPower(e.target.value));syncSlapControls();
@@ -250,14 +264,33 @@ function settleCharacter(){
 }
 function changeView(mode){
   endGesture();sound.stop();settleCharacter();
+  const inWorld=mode==='level'?!!garden?.active:mode==='garden';
+  renderer.shadowMap.enabled=inWorld;
+  for(const light of studioLights)light.visible=!inWorld;
+  if(mode==='level'){setMood('Somewhere new. Same impeccable fluff.');return;}
   if(mode==='garden'){studioTool=tool;setTool('pull');setMood('A whole sky. All for me?');}
   else{setTool(studioTool);setMood('A little touch-up before the next adventure.');}
 }
 function gardenEvent(event){
-  sound.wonder(event.type,event.type==='land'?Math.min(1,(event.impact||1)/9):1);
+  if(event.type==='hazard'||event.type==='timeout'){endGesture();sound.stop();settleCharacter();}
+  const strength=event.type==='land'?Math.min(1,(event.impact||1)/9):event.type==='target'?Math.min(1,(event.progress||event.count||1)/(event.total||3)):1;
+  const rejected=(event.type==='target'&&event.status&&event.status!=='activated')||(event.type==='gate'&&event.open===false)||(event.type==='core'&&event.action==='drop');
+  sound.wonder(rejected?'hazard':event.type,rejected?.2:strength);
   if(event.type==='land')squash.velocity=THREE.MathUtils.clamp(squash.velocity+(event.impact||0)*.065,-2,2);
-  if(event.type==='star'){brushJoy=.8;setMood(event.count===1?'I found a piece of the sky.':'Another little wonder.');idleReturn=time+5;}
-  if(event.type==='rescue'){settleCharacter();setMood('The clouds caught me. Obviously.');idleReturn=time+5;}
+  if(event.type==='level'){
+    const remarks={resonance:'Those rings could use a little momentum.',rescue:'Nobody puts a jellyfish in a cage.',sequence:'Three mirrors. One very particular order.',timed:'A storm with a deadline. Of course.',escort:'Precious cargo. Impeccable hat.'};
+    setMood(remarks[event.missionType]||'A whole dream. All for me?');idleReturn=time+8;
+  }
+  if(event.type==='target'){
+    if(rejected){setMood(({'need-speed':'A little more momentum for that ring.','need-impact':'That lock needs a proper whack.','wrong-order':'The other mirror is calling first.','recover-core':'I appear to be missing my precious cargo.'})[event.status]||'That needs another approach.');}
+    else{brushJoy=.8;setMood(event.progress===event.total?'That sounds like an open door.':'Now we’re getting somewhere.');}
+    idleReturn=time+5;
+  }
+  if(event.type==='gate'){setMood(event.open===false?'The passage is still sealed.':'I believe that is my entrance.');idleReturn=time+5;}
+  if(event.type==='rescue'){settleCharacter();setMood(garden?.state.mission?.core?.carried===false?'The core slipped. It’s nearby.':'A tactical retreat. Obviously.');idleReturn=time+5;}
+  if(event.type==='hazard'){react('poke',new THREE.Vector3(0,1.9,1));setMood('Rude. Even for a dream.');idleReturn=time+5;}
+  if(event.type==='timeout'){setMood('Right. A little less sightseeing this time.');idleReturn=time+6;}
+  if(event.type==='core'){setMood((event.carried===false||event.action==='drop')?'I should probably get that back.':'Safe with me. Mostly.');idleReturn=time+5;}
   if(event.type==='complete'){brushJoy=1;setMood('I knew this hat was lucky.');idleReturn=time+15;}
 }
 
@@ -388,7 +421,7 @@ window.addEventListener('keydown',e=>{
   if(e.altKey||e.ctrlKey||e.metaKey||usesNativeKeys(e))return;
   if(e.key==='Escape'&&garden?.active){e.preventDefault();endGesture();sound.stop();return;}
   if(e.key.toLowerCase()==='m'&&!e.repeat){e.preventDefault();toggleSound(e);return;}
-  const values={'1':'poke','2':'pull','3':'brush','4':'turn','5':'slap'};
+  const values={'1':'poke','2':'slap','3':'pull','4':'brush','5':'turn'};
   if(values[e.key])setTool(values[e.key]);
   if(e.key.toLowerCase()==='r'&&!e.repeat){unlockSound(e);reset();if(e.isTrusted)sound.reset();}
   if(document.activeElement!==canvas||!loaded)return;
@@ -453,13 +486,13 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     if(active&&active.tool!=='poke'&&active.tool!=='slap'){sound.update({tension:active.node?active.node.value.length()/2.65:0,speed:active.soundSpeed,pan:active.soundPan});active.soundSpeed*=Math.exp(-12*dt);}
     if(!active&&time>idleReturn&&brushJoy<.1&&mood.textContent!=='Perfectly unbothered.')setMood('Perfectly unbothered.');
   }
-  renderer.render(scene,camera);
+  if(garden?.active&&gardenRenderer)gardenRenderer.render();else renderer.render(scene,camera);
 }
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,mode:garden?.active?'garden':'studio',garden:garden?.state||null,gardenScreen:garden?.screenPosition||null,tool,slapPower,slapCount,brushSize,brushRadius,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,worldsReady:!!garden,graphics:gardenRenderer?.state||null,mode:garden?.active?'garden':'studio',garden:garden?.state||null,gardenScreen:garden?.screenPosition||null,tool,slapPower,slapCount,brushSize,brushRadius,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,maxSurfaceDeform,furCount,outerFurCount,undercoatCount:furCount-outerFurCount,eyeBlinks:Object.fromEntries(eyes.map(e=>[e.name,e.morphTargetInfluences?.[e.morphTargetDictionary?.Blink]||0])),hatContactReady:!!hatContact,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),squash:squash.value,physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
-register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, Turn, or Slap in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
-register({name:'reset_gizmo',title:'Reset Gizmo',description:'In the studio, restore Gizmo’s shape and clear brush strokes. In the garden, return to the last sanctuary without clearing the hairstyle or collected starlight.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}
+register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Slap, Pull, Brush, or Turn in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:toolNames}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!toolNames.includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});
+register({name:'reset_gizmo',title:'Reset Gizmo',description:'In the studio, restore Gizmo’s shape and clear brush strokes. In a realm, return to the last safe landing while preserving hairstyle and mission progress; carried dreamcore cargo is dropped nearby for recovery.',inputSchema:{type:'object',properties:{},additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length)throw new Error('Expected an empty object');reset();return {reset:true};}});window.addEventListener('pagehide',()=>lifecycle.abort(),{once:true});}

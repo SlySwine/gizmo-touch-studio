@@ -1,0 +1,255 @@
+{
+  "generator": "tools/build_dream_assets.py",
+  "seed": 60104,
+  "blender": "5.2.1 LTS",
+  "coordinates": "glTF +Y up/+Z forward; source Blender x,z,-y; top-level group origins remain at zero.",
+  "groups": [
+    {
+      "name": "JellyBell",
+      "vertices": 9747,
+      "triangles": 19420,
+      "bounds": {
+        "min": [
+          -0.8746400475502014,
+          0.024607695639133453,
+          -0.8746400475502014
+        ],
+        "max": [
+          0.8746004700660706,
+          0.7309959530830383,
+          0.8746400475502014
+        ]
+      },
+      "meshes": [
+        "JellyBell_canal_cyan_luminous",
+        "JellyBell_canal_rose_organs",
+        "JellyInnerStomach",
+        "JellyMembrane",
+        "JellyScallopedRim"
+      ],
+      "materials": [
+        "canal_cyan_luminous",
+        "canal_rose_organs",
+        "membrane_opaline"
+      ],
+      "placement": "Umbrella top Y .72; scalloped rim near Y .085. Attach animated tentacles under the rim."
+    },
+    {
+      "name": "LotusPlatform",
+      "vertices": 6922,
+      "triangles": 13696,
+      "bounds": {
+        "min": [
+          -1.0,
+          -0.2336951345205307,
+          -1.0
+        ],
+        "max": [
+          1.0,
+          0.0,
+          1.0
+        ]
+      },
+      "meshes": [
+        "LotusLandingCenter",
+        "LotusPlatform_canal_cyan_luminous",
+        "LotusPlatform_membrane_opaline",
+        "LotusPlatform_membrane_petal"
+      ],
+      "materials": [
+        "canal_cyan_luminous",
+        "membrane_landing_center",
+        "membrane_opaline",
+        "membrane_petal"
+      ],
+      "placement": "Diameter 2.0 across petal tips. Flat landing center Y=0; all petal edges droop below the landing plane."
+    },
+    {
+      "name": "CrystalCluster",
+      "vertices": 1033,
+      "triangles": 2038,
+      "bounds": {
+        "min": [
+          -0.627267062664032,
+          0.0,
+          -0.5813974738121033
+        ],
+        "max": [
+          0.7005332112312317,
+          1.4894235134124756,
+          0.5398705005645752
+        ]
+      },
+      "meshes": [
+        "CrystalCluster_glass_amethyst",
+        "CrystalCluster_glass_clear_cyan"
+      ],
+      "materials": [
+        "glass_amethyst",
+        "glass_clear_cyan"
+      ],
+      "placement": "Base near Y=0; exact bounds supplied for placement."
+    },
+    {
+      "name": "PrismRelay",
+      "vertices": 4402,
+      "triangles": 8672,
+      "bounds": {
+        "min": [
+          -0.7160000205039978,
+          0.012100547552108765,
+          -0.4444137513637543
+        ],
+        "max": [
+          0.7160000205039978,
+          1.5478993654251099,
+          0.4444137513637543
+        ]
+      },
+      "meshes": [
+        "PrismRelay_canal_cyan_luminous",
+        "PrismRelay_gold_brushed_champagne",
+        "PrismRelay_gold_pale_edges",
+        "RelayPrism"
+      ],
+      "materials": [
+        "canal_cyan_luminous",
+        "glass_clear_cyan",
+        "gold_brushed_champagne",
+        "gold_pale_edges"
+      ],
+      "placement": "Base near Y=0; exact bounds supplied for placement."
+    },
+    {
+      "name": "Orrery",
+      "vertices": 7528,
+      "triangles": 14712,
+      "bounds": {
+        "min": [
+          -1.099000096321106,
+          0.006953015923500061,
+          -1.0401601791381836
+        ],
+        "max": [
+          1.0989936590194702,
+          1.9871572256088257,
+          1.122875690460205
+        ]
+      },
+      "meshes": [
+        "Orrery_gold_brushed_champagne",
+        "Orrery_gold_pale_edges",
+        "OrreryCentralPearl",
+        "OrreryOrbit00",
+        "OrreryOrbit01",
+        "OrreryOrbit02",
+        "OrreryPlanet0_0",
+        "OrreryPlanet0_1",
+        "OrreryPlanet0_2",
+        "OrreryPlanet1_0",
+        "OrreryPlanet1_1",
+        "OrreryPlanet2_0",
+        "OrreryPlanet2_1"
+      ],
+      "materials": [
+        "glass_amethyst",
+        "glass_clear_cyan",
+        "glass_moon_pearl",
+        "gold_brushed_champagne",
+        "gold_pale_edges"
+      ],
+      "placement": "Base near Y=0; exact bounds supplied for placement."
+    },
+    {
+      "name": "GateFrame",
+      "vertices": 9304,
+      "triangles": 18568,
+      "bounds": {
+        "min": [
+          -1.1853348016738892,
+          -0.00039528124034404755,
+          -0.11499999463558197
+        ],
+        "max": [
+          1.1853348016738892,
+          2.9049999713897705,
+          0.11499999463558197
+        ]
+      },
+      "meshes": [
+        "GateCrownPearl",
+        "GateFrame_glass_rose",
+        "GateFrame_gold_brushed_champagne",
+        "GateFrame_gold_pale_edges",
+        "GateInnerCanal"
+      ],
+      "materials": [
+        "canal_cyan_luminous",
+        "glass_moon_pearl",
+        "glass_rose",
+        "gold_brushed_champagne",
+        "gold_pale_edges"
+      ],
+      "placement": "Base near Y=0; exact bounds supplied for placement."
+    },
+    {
+      "name": "DreamEngine",
+      "vertices": 9750,
+      "triangles": 19436,
+      "bounds": {
+        "min": [
+          -0.8555970191955566,
+          0.015856992453336716,
+          -0.9090636372566223
+        ],
+        "max": [
+          0.8999305367469788,
+          1.9941431283950806,
+          0.8307228684425354
+        ]
+      },
+      "meshes": [
+        "DreamEngine_canal_cyan_luminous",
+        "DreamEngine_gold_pale_edges",
+        "DreamEngine_membrane_petal",
+        "EngineBaseHalo",
+        "EngineCore",
+        "EngineOrb"
+      ],
+      "materials": [
+        "canal_cyan_luminous",
+        "canal_rose_organs",
+        "glass_clear_cyan",
+        "gold_brushed_champagne",
+        "gold_pale_edges",
+        "membrane_petal"
+      ],
+      "placement": "Base near Y=0; exact bounds supplied for placement."
+    }
+  ],
+  "vertices": 48686,
+  "triangles": 96542,
+  "source_blend": "assets-work/dream-kit.blend (outside repository)",
+  "material_note": "Glass and membrane are separate transmissive PBR materials; canals have restrained emission; gold parts are metallic. All meshes have UVs. Renderer can replace materials independently by name.",
+  "glb_bytes": 2472580,
+  "elapsed_seconds": 0.9086978435516357,
+  "validation": {
+    "bytes": 2472580,
+    "exported_vertices": 58503,
+    "triangles": 96542,
+    "meshes": 39,
+    "draw_primitives": 39,
+    "all_have_uvs": true,
+    "errors": [],
+    "groups": [
+      "CrystalCluster",
+      "DreamEngine",
+      "GateFrame",
+      "JellyBell",
+      "LotusPlatform",
+      "Orrery",
+      "PrismRelay"
+    ]
+  },
+  "visual_qa": "All seven assets viewed in isolated Blender Workbench previews; lotus center/petal intersection corrected."
+}

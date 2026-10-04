@@ -50,42 +50,6 @@ function cloudTexture() {
   return texture;
 }
 
-function jewelGeometry(radius, depth, random, segments = 13) {
-  const positions = [], colors = [];
-  const rings = [[], [], []];
-  const palette = [0x44446e, 0x35305f, 0x222b51, 0x56527e, 0x296071, 0x282844];
-  for (let i = 0; i < segments; i++) {
-    const a = i / segments * TAU, variation = .92 + random() * .12;
-    rings[0].push(new THREE.Vector3(Math.cos(a) * radius, -.16, Math.sin(a) * radius * .69));
-    rings[1].push(new THREE.Vector3(Math.cos(a + .06) * radius * variation * .78,
-      -depth * (.35 + random() * .14), Math.sin(a + .06) * radius * variation * .57));
-    rings[2].push(new THREE.Vector3(Math.cos(a - .15) * radius * .19 + radius * .12,
-      -depth * (.84 + random() * .11), Math.sin(a - .15) * radius * .14));
-  }
-  const tip = new THREE.Vector3(radius * .06, -depth * 1.13, -.1);
-  const color = new THREE.Color();
-  const triangle = (a, b, c) => {
-    color.setHex(palette[Math.floor(random() * palette.length)]);
-    for (const p of [a, b, c]) {
-      positions.push(p.x, p.y, p.z);
-      colors.push(color.r, color.g, color.b);
-    }
-  };
-  for (let i = 0; i < segments; i++) {
-    const j = (i + 1) % segments;
-    triangle(rings[0][i], rings[1][i], rings[0][j]);
-    triangle(rings[0][j], rings[1][i], rings[1][j]);
-    triangle(rings[1][i], rings[2][i], rings[1][j]);
-    triangle(rings[1][j], rings[2][i], rings[2][j]);
-    triangle(rings[2][i], tip, rings[2][j]);
-  }
-  const geometry = new THREE.BufferGeometry();
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
-  geometry.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
-  geometry.computeVertexNormals();
-  return geometry;
-}
-
 function starGeometry() {
   const shape = new THREE.Shape();
   for (let i = 0; i < 10; i++) {
@@ -152,489 +116,317 @@ function pointsGeometry(points, random, colors = [COLORS.pearl], dynamic = false
   return geometry;
 }
 
-/** A self-contained, disposable world; it never changes the caller's fog or camera. */
-export function createGardenWorld({ scene, coarse = false }) {
-  const group = new THREE.Group();
-  group.name = 'Starlight Garden';
-  group.visible = false;
-  scene.add(group);
-  const random = randomSource(0x51a71e), glow = glowTexture(), cloudMap = cloudTexture();
-  const matrix = new THREE.Object3D(), color = new THREE.Color();
-  const animatedMaterials = [], jellyfish = [], seeds = [], guideArcs = [];
-  let disposed = false, lastCompleted = false, victoryUntil = 0, meteorBudget = 0;
-  const add = (object, name, parent = group) => { object.name = name; parent.add(object); return object; };
-  const basic = (hex, extra = {}) => new THREE.MeshBasicMaterial({ color: hex, fog: false, ...extra });
-  const standard = (hex, extra = {}) => new THREE.MeshStandardMaterial({ color: hex, roughness: .82, fog: false, ...extra });
-  const glowMaterial = (hex, opacity) => basic(hex, {
-    map: glow, transparent: true, opacity, depthWrite: false, blending: THREE.AdditiveBlending,
-  });
-  const glowPlane = new THREE.PlaneGeometry(1, 1);
-  const makeGlow = (hex, size, opacity, parent, name) => {
-    const mesh = add(new THREE.Mesh(glowPlane, glowMaterial(hex, opacity)), name, parent);
-    mesh.scale.setScalar(size);
-    return mesh;
-  };
+const REALMS = [
+  { sky:0x080e26, haze:0x182f51, color:0x564591, edge:0x70f5ce, accent:0xffa7db, key:0xc3d9ff },
+  { sky:0x070c25, haze:0x163b68, color:0x668acd, edge:0x8ff7ff, accent:0xc3a1ff, key:0xb1d9ff },
+  { sky:0x100a2b, haze:0x352560, color:0x8f80ba, edge:0xf6cfff, accent:0x72f2ff, key:0xcce0ff },
+  { sky:0x090c28, haze:0x28255b, color:0x54467d, edge:0xc69dff, accent:0x8befff, key:0xd2cbff },
+  { sky:0x100e28, haze:0x30224b, color:0x796b96, edge:0xffdca0, accent:0x95e8ff, key:0xffe2b6 },
+];
+function realmIndex(layout) {
+  return Math.max(0, ['starlight-garden','moonlit-tidelands','frostglass-reach','emberfall-caldera','cloud-cathedral'].indexOf(layout.id));
+}
+function combineGeometries(entries) {
+  const p=[],n=[],uv=[];
+  for(const entry of entries){
+    const source=entry.geometry || entry, matrix=entry.matrix || new THREE.Matrix4();
+    const geometry=source.index?source.toNonIndexed():source.clone();geometry.applyMatrix4(matrix);
+    p.push(...geometry.attributes.position.array);n.push(...geometry.attributes.normal.array);
+    if(geometry.attributes.uv)uv.push(...geometry.attributes.uv.array);else uv.push(...new Array(geometry.attributes.position.count*2).fill(0));
+    geometry.dispose();
+  }
+  const result=new THREE.BufferGeometry();result.setAttribute('position',new THREE.Float32BufferAttribute(p,3));
+  result.setAttribute('normal',new THREE.Float32BufferAttribute(n,3));result.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));return result;
+}
+function petalGeometry(count=10) {
+  const p=[],uv=[],indices=[];
+  for(let k=0;k<count;k++){
+    const base=p.length/3,angle=k/count*TAU;
+    for(let u=0;u<=12;u++)for(let v=0;v<=6;v++){
+      const t=u/12,s=v/6*2-1,width=Math.sin(t*Math.PI)**.65*.36;
+      const r=.12+t*.99, lateral=s*width;
+      p.push(Math.cos(angle)*r-Math.sin(angle)*lateral,
+        -.08-Math.sin(t*Math.PI)*.20-t*t*.22+Math.abs(s)**2*.08,
+        Math.sin(angle)*r+Math.cos(angle)*lateral);uv.push(t,v/6);
+      if(u<12&&v<6){const a=base+u*7+v;indices.push(a,a+1,a+7,a+1,a+8,a+7);}
+    }
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(indices);g.computeVertexNormals();return g;
+}
+function landingGeometry() {
+  const p=[0,0,0],uv=[.5,.5],index=[],sides=72;
+  for(let j=0;j<sides;j++){const a=j/sides*TAU,r=1-.055*Math.sin(a*5)**2;p.push(Math.cos(a)*r,0,Math.sin(a)*r*.75);uv.push(Math.cos(a)*.5+.5,Math.sin(a)*.5+.5);}
+  for(let j=0;j<sides;j++)index.push(0,1+(j+1)%sides,1+j);
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(index);g.computeVertexNormals();return g;
+}
+function jellyGeometry(coarse) {
+  const p=[],uv=[],index=[],sides=coarse?36:56,rings=18;
+  for(let j=0;j<=rings;j++)for(let k=0;k<=sides;k++){
+    const t=j/rings*Math.PI*.5,a=k/sides*TAU,r=Math.sin(t)*(1+Math.sin(a*16)*.025*Math.sin(t)**4);
+    p.push(Math.cos(a)*r,.62*Math.cos(t)-.035*Math.sin(a*16)*Math.sin(t)**8,Math.sin(a)*r);uv.push(k/sides,j/rings);
+    if(j<rings&&k<sides){const i=j*(sides+1)+k;index.push(i,i+sides+1,i+1,i+1,i+sides+1,i+sides+2);}
+  }
+  const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(p,3));g.setAttribute('uv',new THREE.Float32BufferAttribute(uv,2));g.setIndex(index);g.computeVertexNormals();return g;
+}
+function tentacleGeometry(coarse) {
+  const parts=[];
+  for(let i=0;i<12;i++){
+    const a=i/12*TAU,points=[];
+    for(let j=0;j<=12;j++){const t=j/12, r=.66+.10*Math.sin(t*8+i);points.push(new THREE.Vector3(Math.cos(a)*r+Math.sin(t*5+i)*t*.18,-t*(1.7+(i%4)*.38),Math.sin(a)*r+Math.cos(t*6+i)*t*.18));}
+    parts.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),coarse?14:22,.012+(i%3)*.006,3,false));
+  }
+  const result=combineGeometries(parts);parts.forEach(g=>g.dispose());return result;
+}
+function radialGeometry() {
+  const parts=[];
+  for(let i=0;i<12;i++){
+    const a=i/12*TAU,points=[];for(let j=0;j<12;j++){const t=j/11*Math.PI*.49;points.push(new THREE.Vector3(Math.cos(a)*Math.sin(t)*.93,.57*Math.cos(t),Math.sin(a)*Math.sin(t)*.93));}
+    parts.push(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(points),14,.009,3,false));
+  }
+  const result=combineGeometries(parts);parts.forEach(g=>g.dispose());return result;
+}
 
-  add(new THREE.HemisphereLight(0xd7d9ff, 0x28214b, .8), 'Garden sky light');
-  const gardenKey = add(new THREE.DirectionalLight(0x8affdd, .65), 'Garden mint light');
-  gardenKey.position.set(-8, 14, 12);
-  const gardenRim = add(new THREE.DirectionalLight(0x9676ff, .6), 'Garden violet light');
-  gardenRim.position.set(22, 12, -8);
+/** Believable magical materials and precise visible mission contacts share one world space. */
+export function createGardenWorld({scene,coarse=false,layout=GARDEN,assets={}}) {
+  const realm=realmIndex(layout),theme=REALMS[realm],random=randomSource(81571+realm*619);
+  const group=new THREE.Group();group.name=layout.name || 'Starlight Garden';group.visible=false;scene.add(group);
+  const geometries=new Set(),materials=new Set(),sharedGeometries=new Set(),textures=new Set();
+  const sourceKit=assets.kit?.scene || assets.kit,environment=assets.environment || null;
+  if(sourceKit)sourceKit.traverse(o=>{if(o.geometry)sharedGeometries.add(o.geometry);});
+  const timeUniform={value:0}, hazeColor=new THREE.Color(theme.haze);
+  const glow=glowTexture(),cloud=cloudTexture();textures.add(glow);textures.add(cloud);
+  const own=g=>(geometries.add(g),g),mat=m=>(materials.add(m),m);
+  const add=(o,name,parent=group)=>{o.name=name;parent.add(o);return o;};
+  const mesh=(geometry,material,name,parent=group)=>add(new THREE.Mesh(geometry,material),name,parent);
+  const basic=(color,extra={})=>mat(new THREE.MeshBasicMaterial({color,fog:false,...extra}));
+  function physical(color,extra={}) {
+    const {haze=.011,flex=false,...options}=extra;
+    const m=mat(new THREE.MeshPhysicalMaterial({color,roughness:.3,metalness:.12,envMap:environment,
+      envMapIntensity:.4,clearcoat:.6,clearcoatRoughness:.22,fog:false,...options}));
+    m.onBeforeCompile=shader=>{
+      shader.uniforms.dreamHaze={value:hazeColor};shader.uniforms.dreamDensity={value:haze};shader.uniforms.dreamTime=timeUniform;
+      shader.fragmentShader='uniform vec3 dreamHaze;uniform float dreamDensity;\n'+shader.fragmentShader;
+      shader.fragmentShader=shader.fragmentShader.replace('#include <opaque_fragment>',
+        '#include <opaque_fragment>\ngl_FragColor.rgb=mix(gl_FragColor.rgb,dreamHaze,min(.93,1.0-exp(-pow(length(vViewPosition)*dreamDensity,2.0))));');
+      if(flex){shader.vertexShader='uniform float dreamTime;\n'+shader.vertexShader;shader.vertexShader=shader.vertexShader.replace('#include <begin_vertex>',
+        'vec3 transformed=position;float w=max(0.0,-position.y);transformed.x+=sin(dreamTime*.8+w*1.9+position.z*5.0)*w*.045;transformed.z+=cos(dreamTime*.63+w*1.5+position.x*3.0)*w*.035;');}
+    };m.customProgramCacheKey=()=>`dream-haze-${flex?'flex':'rigid'}`;return m;
+  }
+  const gold=physical(0xc59d5d,{metalness:.82,roughness:.25,envMapIntensity:.65});
+  const pearl=physical(0xa7b9d7,{roughness:.27,metalness:.2});
+  const petal=physical(theme.color,{roughness:.34,metalness:.04,sheen:1,sheenColor:new THREE.Color(theme.accent),sheenRoughness:.45,side:THREE.DoubleSide});
+  const surface=physical(realm===0?0x48577a:theme.color,{roughness:realm===2?.15:.33,metalness:.10,clearcoat:.8});
+  const glass=physical(0x315784,{roughness:.16,metalness:0,transmission:coarse?.30:.65,thickness:.65,ior:1.36,transparent:true,opacity:.62,side:THREE.DoubleSide,depthWrite:false,envMapIntensity:.65,attenuationColor:new THREE.Color(theme.edge),attenuationDistance:2.5});
+  // The bright HDR sky otherwise dominates low-roughness glass and washes its facets to chalk.
+  const crystal=physical(realm===2?0x6680c8:0x51769d,{roughness:.03,metalness:0,transmission:coarse?.72:.92,thickness:.8,ior:1.6,dispersion:coarse?0:.5,clearcoat:1,envMapIntensity:realm===2||realm===4?.132:1.1,attenuationColor:new THREE.Color(0x5268cd),attenuationDistance:1.5});
+  const glowMaterial=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.28,roughness:.25,metalness:.15});
+  const filament=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.25,transparent:true,opacity:.55,roughness:.35,depthWrite:false,flex:true});
+  const backGlass=physical(theme.accent,{haze:.028,roughness:.3,metalness:0,transparent:true,opacity:.13,depthWrite:false,side:THREE.DoubleSide,emissive:theme.edge,emissiveIntensity:.1});
+  const backFilament=physical(theme.edge,{haze:.028,transparent:true,opacity:.17,depthWrite:false,emissive:theme.edge,emissiveIntensity:.12,flex:true});
+  const accentBasic=basic(theme.edge,{transparent:true,opacity:.65,depthWrite:false,blending:THREE.AdditiveBlending});
+  const dimBasic=basic(theme.edge,{transparent:true,opacity:.18,depthWrite:false});
+  const plane=own(new THREE.PlaneGeometry(1,1)),ring=own(new THREE.TorusGeometry(1,.017,5,coarse?48:72));
+  const sphere=own(new THREE.SphereGeometry(1,coarse?16:24,coarse?10:16));
+  const petals=own(petalGeometry()),landing=own(landingGeometry()),bell=own(jellyGeometry(coarse));
+  const tentacles=own(tentacleGeometry(coarse)),radials=own(radialGeometry());
+  const diamond=own(new THREE.OctahedronGeometry(1,0));
+  const haloMaterials=[];
+  function halo(color,size,opacity,parent=group){const m=basic(color,{map:glow,transparent:true,opacity,depthWrite:false,blending:THREE.AdditiveBlending});haloMaterials.push(m);const o=mesh(plane,m,'Atmospheric glow',parent);o.scale.setScalar(size);return o;}
+  function hoop(radius,material,parent,name='Luminous hoop'){const o=mesh(ring,material,name,parent);o.scale.setScalar(radius);return o;}
+  function kit(name,parent,{width=2,height=1,depth=width,top=false,material=null}={}) {
+    const source=sourceKit?.getObjectByName(name);if(!source)return null;
+    sourceKit.updateWorldMatrix(true,true);const inverse=source.matrixWorld.clone().invert(),bounds=new THREE.Box3(),parts=[];
+    source.traverse(o=>{if(!o.isMesh)return;if(!o.geometry.boundingBox)o.geometry.computeBoundingBox();const transform=inverse.clone().multiply(o.matrixWorld);bounds.union(o.geometry.boundingBox.clone().applyMatrix4(transform));parts.push({o,transform});});
+    const size=bounds.getSize(new THREE.Vector3()),center=bounds.getCenter(new THREE.Vector3()),result=add(new THREE.Group(),name,parent);
+    const normalization=new THREE.Matrix4().makeScale(width/size.x,height/size.y,depth/size.z).multiply(new THREE.Matrix4().makeTranslation(-center.x,-(top?bounds.max.y:bounds.min.y),-center.z));
+    for(const {o,transform} of parts){const slot=o.material?.name || '';const mapped=material || (/gold|brass|metal/i.test(slot)?gold:/canal|organ|light|energy/i.test(slot)?glowMaterial:/glass|prism|crystal/i.test(slot)?crystal:/membrane/i.test(slot)?glass:petal);const child=mesh(o.geometry,mapped,o.name,result);child.applyMatrix4(normalization.clone().multiply(transform));child.castShadow=true;child.receiveShadow=true;}
+    return result;
+  }
+  function jelly(parent,size=1,background=false){
+    const g=add(new THREE.Group(),background?'Distant living jellyfish':'Living jellyfish',parent);g.scale.setScalar(size);
+    const b=kit('JellyBell',g,{width:2,height:.64,depth:2,material:background?backGlass:null}) || mesh(bell,background?backGlass:glass,'Translucent bell',g);
+    const canals=mesh(radials,background?backFilament:glowMaterial,'Radial organs',g);canals.position.y=.015;
+    mesh(tentacles,background?backFilament:filament,'Flowing tentacles',g);
+    const organ=mesh(sphere,background?backGlass:crystal,'Pulsing inner organ',g);organ.scale.set(.32,.19,.32);organ.position.y=.25;
+    return {group:g,bell:b,organ};
+  }
 
-  const skyMaterial = new THREE.ShaderMaterial({
-    depthWrite: false,
-    vertexShader: 'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}',
-    fragmentShader: `varying vec2 vUv;void main(){
-      vec3 low=vec3(.007,.014,.027),high=vec3(.003,.005,.016);
-      vec3 c=mix(low,high,smoothstep(.1,.85,vUv.y));
-      c+=vec3(.006,.017,.020)*exp(-pow((vUv.y-.30)*7.0,2.0));
-      c+=vec3(.012,.004,.022)*exp(-dot(vec2((vUv.x-.65)*4.0,(vUv.y-.54)*8.0),vec2((vUv.x-.65)*4.0,(vUv.y-.54)*8.0)));
-      gl_FragColor=vec4(c,1.0);
+  // An opaque, softly structured nebula backs the scene without flattening its depth.
+  const skyMaterial=mat(new THREE.ShaderMaterial({depthWrite:false,uniforms:{time:timeUniform,base:{value:new THREE.Color(theme.sky)},haze:{value:hazeColor},accent:{value:new THREE.Color(theme.accent)}},
+    vertexShader:'varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.);}',
+    fragmentShader:`uniform float time;uniform vec3 base,haze,accent;varying vec2 vUv;
+      float wave(vec2 p){return sin(p.x*9.+sin(p.y*7.))*sin(p.y*5.+sin(p.x*6.));}
+      void main(){vec2 p=vUv;float n=wave(p*2.3)*.5+wave(p*5.7)*.22;float veil=exp(-pow((p.y-.44-n*.05)*8.,2.));
+      vec3 c=base+haze*veil*.34+accent*pow(max(0.,n),3.)*.025;gl_FragColor=vec4(c,1.);
       #include <tonemapping_fragment>
       #include <colorspace_fragment>
-    }`,
-  });
-  const sky = add(new THREE.Mesh(new THREE.PlaneGeometry(150, 100), skyMaterial), 'Twilight backdrop');
-  sky.position.set(20, 14, -36);
-  sky.renderOrder = -20;
+      }`}));
+  const sky=mesh(own(new THREE.PlaneGeometry(320,210)),skyMaterial,'Deep nocturnal nebula');sky.position.set(20,12,-110);sky.renderOrder=-30;
+  const ambient=add(new THREE.HemisphereLight(0xb0cfff,0x291e45,.55),'Soft celestial sky');
+  const key=add(new THREE.DirectionalLight(theme.key,1.7),'Soft moon key');add(key.target,'Moon key target');key.castShadow=true;key.shadow.mapSize.set(coarse?1024:2048,coarse?1024:2048);Object.assign(key.shadow.camera,{left:-14,right:14,top:14,bottom:-14,near:.5,far:65});key.shadow.bias=-.0002;key.shadow.normalBias=.018;key.shadow.radius=3;
+  const fill=add(new THREE.PointLight(theme.edge,7,26,2),'Subtle luminous bounce');
 
-  const auroraMaterial = new THREE.ShaderMaterial({
-    uniforms: { time: { value: 0 }, tint: { value: new THREE.Color(0x70ead9) } },
-    side: THREE.DoubleSide, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending,
-    vertexShader: `uniform float time;varying vec2 vUv;void main(){
-      vUv=uv;vec3 p=position;p.y+=sin(p.x*.10+time*.075)*1.7;
-      p.z+=sin(p.x*.16+time*.06)*1.8+sin(p.x*.31)*.4;
-      gl_Position=projectionMatrix*modelViewMatrix*vec4(p,1.0);
-    }`,
-    fragmentShader: `uniform float time;uniform vec3 tint;varying vec2 vUv;void main(){
-      float fibers=.42+.38*pow(.5+.5*sin(vUv.x*520.0+sin(vUv.x*67.0)*3.0+time*.13),2.0);
-      float edge=pow(max(0.0,sin(vUv.y*3.14159265)),1.7)*smoothstep(0.0,.08,vUv.x)*(1.0-smoothstep(.92,1.0,vUv.x));
-      edge*=exp(-pow((vUv.y-(.38+.16*sin(vUv.x*9.0+time*.045)))*3.6,2.0));
-      vec3 c=mix(vec3(.075,.018,.18),tint,smoothstep(.16,.85,vUv.y));
-      gl_FragColor=vec4(c,edge*fibers*.12);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-    }`,
-  });
-  const aurora = add(new THREE.Mesh(new THREE.PlaneGeometry(72, 6, coarse ? 50 : 90, 6), auroraMaterial), 'Flowing aurora');
-  aurora.position.set(22, 11.7, -25);
-  animatedMaterials.push(auroraMaterial);
-  const secondAuroraMaterial = auroraMaterial.clone();
-  secondAuroraMaterial.uniforms.tint.value.setHex(0x9580fa);
-  const secondAurora = add(new THREE.Mesh(aurora.geometry, secondAuroraMaterial), 'Distant violet aurora');
-  secondAurora.position.set(17, 15, -29);
-  secondAurora.scale.set(1.2, .6, 1);
-  animatedMaterials.push(secondAuroraMaterial);
-
-  const moon = add(new THREE.Group(), 'Ringed moon');
-  moon.position.set(12, 9.2, -23);
-  const moonMaterial = new THREE.ShaderMaterial({
-    vertexShader: `varying vec3 vNormal;varying vec3 vP;void main(){vNormal=normalize(normalMatrix*normal);vP=position;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,
-    fragmentShader: `varying vec3 vNormal;varying vec3 vP;void main(){
-      float lit=smoothstep(-.35,.8,dot(normalize(vNormal),normalize(vec3(-.7,.45,1.0))));
-      float grain=sin(vP.x*2.0+sin(vP.z*1.3)*1.4)*sin(vP.y*1.6)*.012;
-      vec3 c=mix(vec3(.17,.13,.29),vec3(.76,.80,.96),lit)+grain;
-      gl_FragColor=vec4(c,1.0);
-      #include <tonemapping_fragment>
-      #include <colorspace_fragment>
-    }`,
-  });
-  add(new THREE.Mesh(new THREE.SphereGeometry(3.3, coarse ? 28 : 44, 24), moonMaterial), 'Pearlescent moon', moon);
-  const moonGlow = makeGlow(0xb2a5ff, 11.5, .16, moon, 'Moon atmosphere');
-  moonGlow.position.z = -.4;
-  const rings = add(new THREE.Group(), 'Moon rings', moon);
-  rings.rotation.set(1.08, -.16, -.27);
-  const ringDust = add(new THREE.Mesh(new THREE.RingGeometry(4.1, 5.45, 96), basic(0xb8aeea,
-    { transparent: true, opacity: .13, side: THREE.DoubleSide, depthWrite: false })), 'Moon ring dust', rings);
-  for (const [radius, opacity] of [[4.18, .44], [4.55, .72], [5.15, .3]]) {
-    add(new THREE.Mesh(new THREE.TorusGeometry(radius, .015, 4, 112), basic(0xe9d9bd,
-      { transparent: true, opacity, depthWrite: false })), 'Fine orbit ring', rings);
-  }
-
-  const skyPoints = [];
-  for (let i = 0; i < (coarse ? 600 : 1150); i++) {
-    skyPoints.push({ x: -25 + random() * 100, y: -1 + random() * 31, z: -33 + random() * 18 });
-  }
-  const starsMaterial = particleMaterial({ size: 2.6, opacity: .83 });
-  add(new THREE.Points(pointsGeometry(skyPoints, random, [0xdad5ff, 0x96dbe9, 0xffe3b2]), starsMaterial), 'Distant starlight');
-  animatedMaterials.push(starsMaterial);
-
-  const islandStone = standard(0xffffff, { vertexColors: true, flatShading: true,
-    emissive: 0x34354e, emissiveIntensity: .22 });
-  // Every moss cap ends at its exact physics Y; the floating rock hangs below it.
-  for (const [index, island] of GARDEN.islands.entries()) {
-    const land = add(new THREE.Group(), `Island ${island.id}: ${island.name || index + 1}`);
-    land.position.set(island.x, island.y, 0);
-    land.userData.platform = { id: island.id, top: island.y, radius: island.radius };
-    add(new THREE.Mesh(jewelGeometry(island.radius, 1.35 + random() * .9, random), islandStone), 'Faceted floating roots', land);
-    const cap = add(new THREE.Mesh(new THREE.CylinderGeometry(island.radius, island.radius * .96, .15, 20),
-      standard(index === GARDEN.islands.length - 1 ? 0x387e72 : COLORS.moss)), 'Flat moss landing', land);
-    cap.position.y = -.075;
-    cap.scale.z = .69;
-    const rim = add(new THREE.Mesh(new THREE.TorusGeometry(island.radius * .985, .025, 4, 40),
-      basic(index === GARDEN.islands.length - 1 ? 0xb9dfa9 : 0x63b6af, { transparent: true, opacity: .46, depthWrite: false })), 'Moss rim', land);
-    rim.rotation.x = Math.PI / 2;
-    rim.scale.y = .69;
-    rim.position.y = -.012;
-    const seamPoints = [];
-    for (let v = 0; v < 3; v++) {
-      const x = (random() - .5) * island.radius * 1.35;
-      seamPoints.push(new THREE.Vector3(x, -.27, island.radius * .59),
-        new THREE.Vector3(x * .65 + .12, -1.0 - random() * .3, island.radius * .31));
+  const platforms=new Map(),platformAnimations=[],backgroundJellies=[];
+  const tinyFlowerParts=[];
+  for(let i=0;i<6;i++){const m=new THREE.Matrix4().makeRotationY(i/6*TAU).multiply(new THREE.Matrix4().makeTranslation(.11,.025,0)).multiply(new THREE.Matrix4().makeScale(.17,.045,.085));tinyFlowerParts.push({geometry:sphere,matrix:m});}
+  const facetShape=new THREE.Shape();facetShape.moveTo(-1,-.37);facetShape.lineTo(-.80,-.60);facetShape.lineTo(.72,-.60);facetShape.lineTo(1,-.30);facetShape.lineTo(1,.29);facetShape.lineTo(.76,.60);facetShape.lineTo(-.77,.60);facetShape.lineTo(-1,.32);facetShape.closePath();
+  const facet=own(new THREE.ExtrudeGeometry(facetShape,{depth:.16,bevelEnabled:true,bevelThickness:.045,bevelSize:.035,bevelSegments:2,steps:1}));facet.rotateX(Math.PI/2);facet.translate(0,-.045,0);
+  const facetMaterial=physical(realm===4?0x30294d:0x263767,{roughness:.07,metalness:0,transmission:coarse?.15:.36,thickness:.18,ior:1.52,clearcoat:1,envMapIntensity:.065,attenuationColor:new THREE.Color(0x25368a),attenuationDistance:.7});
+  const facetEdges=own(new THREE.EdgesGeometry(facet));
+  const facetEdgeMaterial=basic(theme.edge,{transparent:true,opacity:.30,depthWrite:false});
+  const contactMembrane=physical(0x467fac,{roughness:.19,metalness:.03,transmission:coarse?.22:.62,thickness:.08,ior:1.36,transparent:true,opacity:.28,depthWrite:false,side:THREE.DoubleSide});
+  const tinyFlower=own(combineGeometries(tinyFlowerParts));
+  const flowerMaterial=physical(0xa393b8,{emissive:theme.accent,emissiveIntensity:.15,roughness:.35,sheen:1,sheenColor:new THREE.Color(theme.accent)});
+  const dummy=new THREE.Object3D();
+  for(const [index,island] of (layout.islands || GARDEN.islands).entries()){
+    const p=add(new THREE.Group(),`Landing ${island.id}`);p.position.set(island.x,island.y,0);platforms.set(island.id,p);const r=island.radius;
+    if(realm===1){const top=mesh(landing,contactMembrane,'Thin jelly contact membrane',p);top.scale.set(r,1,r);top.receiveShadow=true;}
+    if(realm===2 || realm===4){const top=mesh(facet,facetMaterial,'Beveled optical landing facet',p);top.scale.set(r/1.035,1,realm===4?r*.65:r);top.receiveShadow=true;top.castShadow=true;const edges=add(new THREE.LineSegments(facetEdges,facetEdgeMaterial),'Optical facet bevel',p);edges.scale.copy(top.scale);}
+    if(realm===1){const j=jelly(p,r);j.group.position.y=-.63*r-.06;platformAnimations.push({type:'jelly',...j});}
+    else if(realm===2){
+      const c=kit('CrystalCluster',p,{width:r*1.9,height:2.5+index%3*.4,depth:r*1.35,top:true});
+      if(!c){const o=mesh(diamond,crystal,'Crystalline support',p);o.position.y=-1.5;o.scale.set(r,1.5,r*.72);}
+      for(let n=0;n<3;n++){const q=mesh(diamond,crystal,'Prismatic crown',p);q.scale.set(.18,.32+n*.14,.18);q.position.set((n-1)*r*.5,.10,-r*.55);q.rotation.z=(n-1)*.18;}
+    }else{
+      const pet=realm===4?null:kit('LotusPlatform',p,{width:r*2,height:realm===3?1.25:.9,depth:r*1.55,top:true}) || mesh(petals,petal,'Layered flower petals',p);
+      if(pet?.isMesh)pet.scale.set(r,1.8,r*.76);
+      if(realm===4){const o=kit('Orrery',p,{width:r*2.4,height:1.7,depth:r*1.8,top:true});if(!o){const h=hoop(r*1.1,gold,p);h.rotation.x=1.13;h.position.y=-.55;}}
+      if(realm===3){const h=hoop(r*1.1,gold,p,'Conducting storm ring');h.rotation.x=Math.PI/2;h.position.y=-.35;platformAnimations.push({type:'ring',group:h,baseY:h.position.y});}
     }
-    add(new THREE.LineSegments(new THREE.BufferGeometry().setFromPoints(seamPoints),
-      new THREE.LineBasicMaterial({ color: 0x69c7bc, transparent: true, opacity: .27, depthWrite: false, fog: false })), 'Luminous mineral veins', land);
+    if(realm!==2 && realm!==4){const rim=hoop(r*.96,realm===1?accentBasic:glowMaterial,p,'Landing edge');rim.rotation.x=Math.PI/2;rim.scale.y*=.75;rim.position.y=-.025;}
+    if(realm===0 || realm===3){
+      const count=coarse?12:23,flowers=add(new THREE.InstancedMesh(tinyFlower,flowerMaterial,count),'Living edge blossoms',p);
+      for(let j=0;j<count;j++){const a=random()*TAU,rad=r*(.71+random()*.2);dummy.position.set(Math.cos(a)*rad,.04,Math.sin(a)*rad*.72);if(Math.abs(dummy.position.z)<.22)dummy.position.z=-.28;dummy.rotation.set((random()-.5)*.2,random()*TAU,0);dummy.scale.setScalar(.6+random()*.8);dummy.updateMatrix();flowers.setMatrixAt(j,dummy.matrix);}
+    }
+    if(index>0){const underside=halo(theme.edge,r*2.2,.13,p);underside.position.set(0,-.6,-.3);}
   }
 
-  const makeInstances = (geometry, material, count, name) => {
-    const mesh = add(new THREE.InstancedMesh(geometry, material, count), name);
-    mesh.frustumCulled = false;
-    return mesh;
-  };
-  const writeInstance = (mesh, index, position, scale, rotation, shade) => {
-    matrix.position.set(position[0], position[1], position[2]);
-    matrix.scale.set(scale[0], scale[1], scale[2]);
-    matrix.rotation.set(rotation[0], rotation[1], rotation[2]);
-    matrix.updateMatrix();
-    mesh.setMatrixAt(index, matrix.matrix);
-    if (shade !== undefined) mesh.setColorAt(index, color.setHex(shade));
-  };
-  const plantCount = GARDEN.islands.length * (coarse ? 5 : 8);
-  const stems = makeInstances(new THREE.CylinderGeometry(.017, .032, 1, 5), standard(0x79acbc), plantCount, 'Whimsical mushroom stems');
-  const caps = makeInstances(new THREE.SphereGeometry(1, 10, 6, 0, TAU, 0, Math.PI / 2),
-    standard(0xffffff, { emissive: 0x447f85, emissiveIntensity: .42, roughness: .55 }), plantCount, 'Luminous mushroom bells');
-  const spores = makeInstances(glowPlane, glowMaterial(0x72ffe0, .24), plantCount, 'Mushroom lantern glow');
-  const crystals = makeInstances(new THREE.OctahedronGeometry(1, 0),
-    standard(0xffffff, { roughness: .28, metalness: .24, emissive: 0x305779, emissiveIntensity: .6 }), plantCount, 'Jewel crystal clusters');
-  const moss = makeInstances(new THREE.IcosahedronGeometry(1, 0), standard(0xffffff), plantCount * 2, 'Cushions of tiny moss');
-  const leafCount = plantCount * 2;
-  const leaves = makeInstances(new THREE.ConeGeometry(.065, .5, 3),
-    standard(0xffffff, { emissive: 0x164b51, emissiveIntensity: .3 }), leafCount, 'Glowing meadow fronds');
-  let plant = 0;
-  for (const island of GARDEN.islands) {
-    for (let i = 0; i < plantCount / GARDEN.islands.length; i++, plant++) {
-      const side = i % 2 ? 1 : -1;
-      const x = island.x + side * island.radius * (.4 + random() * .4);
-      const z = -.22 - random() * island.radius * .37;
-      const h = .20 + random() * .54, r = .11 + random() * .15;
-      const hue = [0x80eacc, 0xb19bf1, 0x74c9f0, 0xe7cba1][i % 4];
-      writeInstance(stems, plant, [x, island.y + h * .5, z], [1, h, 1], [0, 0, side * -.10], 0x77b7b4);
-      writeInstance(caps, plant, [x - side * h * .045, island.y + h, z], [r, r * .6, r], [0, 0, side * -.10], hue);
-      writeInstance(spores, plant, [x, island.y + h + .035, z + .025], [r * 4, r * 4, 1], [0, 0, 0]);
-      const cx = island.x + side * island.radius * (.68 + random() * .12);
-      const height = .21 + random() * .57;
-      writeInstance(crystals, plant, [cx, island.y + height * .43, .03 + random() * .47],
-        [.09 + random() * .09, height * .52, .1], [0, random(), side * -.15], [0x7dcbd8, 0x9685ee, 0x67c6b5][i % 3]);
-      for (let j = 0; j < 2; j++) {
-        const mx = island.x + (random() - .5) * island.radius * 1.72;
-        const mz = (random() - .5) * island.radius * .87;
-        writeInstance(moss, plant * 2 + j, [mx, island.y + .022, mz], [.10 + random() * .21, .045, .10 + random() * .16],
-          [0, random() * TAU, 0], [0x3e817c, 0x4b9a8a, 0x31677a][j % 3]);
-        const lh = .2 + random() * .35;
-        writeInstance(leaves, plant * 2 + j, [x + (j - .5) * .20, island.y + lh * .43, z - .1],
-          [1, lh * 2, 1], [0, random() * TAU, (j - .5) * .65], j ? 0x6ec1c0 : 0x9488cb);
-      }
+  // Distinct background silhouettes stay behind the route and are deliberately subdued.
+  for(let i=0;i<(realm===1?(coarse?5:8):realm===0?(coarse?2:3):0);i++){
+    const j=jelly(group,1.8+random()*1.8,true);j.group.position.set(-12+i*(realm===0?27:11),4+random()*7,-22-random()*18);j.group.rotation.z=(random()-.5)*.3;backgroundJellies.push({...j,origin:j.group.position.clone(),phase:random()*TAU});
+  }
+  if(realm===0 || realm===3){
+    const count=coarse?18:34,canopyMaterial=physical(0x332b67,{haze:.032,roughness:.5,metalness:0,emissive:theme.accent,emissiveIntensity:.04,side:THREE.DoubleSide});
+    const canopy=add(new THREE.InstancedMesh(petals,canopyMaterial,count),'Distant blooming lotus canopy');
+    for(let i=0;i<count;i++){dummy.position.set(-18+i*3.1, -1+random()*4, -15-random()*21);dummy.scale.set(2.1+random()*2,2+random()*2,2+random()*2);dummy.rotation.set((random()-.5)*.2,random()*TAU,0);dummy.updateMatrix();canopy.setMatrixAt(i,dummy.matrix);}
+  }
+  if(realm===2 || realm===4){
+    for(let i=0;i<8;i++){const parent=add(new THREE.Group(),'Distant astral monument');parent.position.set(-17+i*13,2+random()*8,-28-random()*16);parent.rotation.z=(random()-.5)*.6;
+      if(realm===4){for(let j=0;j<3;j++){const h=hoop(2+j*.7,backFilament,parent);h.rotation.set(j*.5,j*.9,j*.3);}}
+      else{const o=mesh(diamond,backGlass,'Distant beveled diamond',parent);o.scale.set(1.7,3.4,1.7);}
     }
   }
+  const mistCount=coarse?24:42,mist=add(new THREE.InstancedMesh(plane,basic(theme.haze,{map:cloud,transparent:true,opacity:.16,depthWrite:false}),mistCount),'Deep low cloud sea');
+  for(let i=0;i<mistCount;i++){dummy.position.set(-20+random()*100,-4+random()*4,-7-random()*25);dummy.scale.set(10+random()*14,3+random()*5,1);dummy.rotation.set(0,0,0);dummy.updateMatrix();mist.setMatrixAt(i,dummy.matrix);}
+  const fireflyPoints=[];for(let i=0;i<(coarse?220:480);i++)fireflyPoints.push({x:-12+random()*85,y:-2+random()*17,z:-1-random()*36});
+  const fireflyMaterial=mat(particleMaterial({size:realm===0?3:2.3,opacity:.7,animated:true}));add(new THREE.Points(own(pointsGeometry(fireflyPoints,random,[theme.edge,theme.accent,0xffe3a0])),fireflyMaterial),'Fireflies and astral dust');
 
-  const distantStone = standard(0x5b7089, { transparent: true, opacity: .27, depthWrite: false,
-    emissive: 0x3c4d68, emissiveIntensity: .65, flatShading: true });
-  for (let i = 0; i < (coarse ? 9 : 14); i++) {
-    const r = .8 + random() * 1.55;
-    const farIsland = add(new THREE.Mesh(jewelGeometry(r, 1.3 + random() * 1.9, random, 9), distantStone), 'Distant hanging island');
-    farIsland.position.set(-15 + i * 6 + random() * 2, 1 + random() * 7, -17 - random() * 9);
-    farIsland.scale.y = .8;
-    const tinyTower = add(new THREE.Mesh(new THREE.OctahedronGeometry(1, 0), distantStone), 'Far crystal spire');
-    tinyTower.position.copy(farIsland.position).add(new THREE.Vector3(r * .18, r * .22, 0));
-    tinyTower.scale.set(r * .10, r * .40, r * .12);
+  const targets=new Map(),hazards=new Map();let gate=null,exit=null,core=null,coreLink=null,coreGlow=null;
+  const chargePoints=[];for(let i=0;i<=80;i++){const a=Math.PI/2-i/80*TAU;chargePoints.push(new THREE.Vector3(Math.cos(a),Math.sin(a),.2));}
+  const chargeRing=add(new THREE.Line(own(new THREE.BufferGeometry().setFromPoints(chargePoints)),basic(0xffd99c,{transparent:true,opacity:.9})),'Stabilizer remaining charge');chargeRing.visible=false;
+  const numberSegments=[['a','b','c','d','e','f'],['b','c'],['a','b','g','e','d'],['a','b','g','c','d'],['f','g','b','c'],['a','f','g','c','d'],['a','f','g','e','c','d'],['a','b','c'],['a','b','c','d','e','f','g'],['a','b','c','d','f','g']];
+  const segmentPoints={a:[[-.12,.20],[.12,.20]],b:[[.12,.20],[.12,0]],c:[[.12,0],[.12,-.20]],d:[[-.12,-.20],[.12,-.20]],e:[[-.12,0],[-.12,-.20]],f:[[-.12,.20],[-.12,0]],g:[[-.12,0],[.12,0]]};
+  function numeral(number,parent){const points=[];for(const s of numberSegments[number%10])for(const q of segmentPoints[s])points.push(new THREE.Vector3(q[0],q[1],.22));const o=add(new THREE.LineSegments(own(new THREE.BufferGeometry().setFromPoints(points)),basic(0xffffff)),`Mirror ${number}`,parent);return o;}
+  function makeTarget(t,index){
+    const target=add(new THREE.Group(),`Mission ${t.kind || layout.mission?.type} ${t.id}`);target.position.set(t.x,t.y,.18);
+    const r=t.radius || .52,m=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.30,metalness:.5,roughness:.22});
+    const outer=hoop(r,m,target,'Contact boundary'),inner=hoop(r*.83,gold,target,'Inner contact ring');inner.rotation.x=.18;
+    const glow=halo(theme.edge,r*4,.19,target);glow.position.z=-.1;
+    const type=layout.mission?.type;
+    if(type==='sequence'){const relay=kit('PrismRelay',target,{width:r*.82,height:r*1.1,depth:r*.45}) || mesh(diamond,crystal,'Mirror prism',target);if(relay.isMesh)relay.scale.setScalar(r*.44);relay.position.y=-r*.5;numeral(t.order ?? index+1,target);}
+    else if(type==='rescue'){const lock=mesh(own(new THREE.BoxGeometry(.24,.24,.13)),gold,'Jelly cage lock',target);lock.position.y=-.07;const shackle=hoop(.12,gold,target);shackle.position.y=.10;shackle.scale.y*=1.15;}
+    else if(type==='timed'){for(let n=0;n<4;n++){const o=mesh(diamond,crystal,'Stabilizer terminal',target);o.scale.set(.06,.13,.06);o.position.set(Math.cos(n/4*TAU)*r,Math.sin(n/4*TAU)*r,0);}}
+    else{const center=mesh(diamond,crystal,'Resonator heart',target);center.scale.set(.13,.25,.13);}
+    targets.set(t.id,{group:target,outer,inner,glow,material:m,r,index,done:false});return target;
   }
-
-  const cloudCount = coarse ? 78 : 116;
-  const clouds = makeInstances(glowPlane, basic(0xffffff, { map: cloudMap, transparent: true,
-    opacity: .42, depthWrite: false, alphaTest: .005 }), cloudCount, 'Soft layered sea of clouds');
-  for (let i = 0; i < cloudCount; i++) {
-    const foreground = i % 4 === 0;
-    const x = -19 + random() * 85, z = foreground ? 2 + random() * 5 : -4 - random() * 15;
-    const y = foreground ? -5.5 - random() * 1.6 : -3.2 - random() * 2;
-    writeInstance(clouds, i, [x, y, z], [6 + random() * 8, 3.2 + random() * 3, 1],
-      [0, 0, (random() - .5) * .10], foreground ? 0x687496 : [0x7385a4, 0x67799b, 0x607998][i % 3]);
+  (layout.mission?.targets || []).forEach(makeTarget);
+  if(layout.mission?.gate){
+    const spec=layout.mission.gate;gate=add(new THREE.Group(),'Physical mission gate');gate.position.set(spec.x,spec.y,0);
+    const frame=kit('GateFrame',gate,{width:spec.width+.5,height:spec.height,depth:.35});if(frame)frame.position.y=-spec.height*.5;
+    const pane=mesh(own(new THREE.PlaneGeometry(spec.width,spec.height)),basic(theme.edge,{transparent:true,opacity:.26,side:THREE.DoubleSide,depthWrite:false}),'Closed gate barrier',gate);
+    for(let i=0;i<5;i++){const beam=mesh(own(new THREE.CylinderGeometry(.015,.015,spec.height,5)),glowMaterial,'Gate energy bar',gate);beam.position.x=(i/4-.5)*spec.width;}
   }
-
-  const fireflyPoints = [];
-  for (const island of GARDEN.islands) for (let i = 0; i < (coarse ? 8 : 15); i++) {
-    fireflyPoints.push({ x: island.x + (random() - .5) * 4.2, y: island.y + .2 + random() * 2,
-      z: -.4 - random() * 2.4 });
+  const exitSpec=layout.mission?.exit || {x:layout.islands.at(-1).x,y:layout.islands.at(-1).y+.7,radius:.8};
+  exit=add(new THREE.Group(),'Realm exit');exit.position.set(exitSpec.x,exitSpec.y,-.18);
+  const exitMaterial=physical(0x686180,{emissive:theme.edge,emissiveIntensity:.08,metalness:.6});
+  const exitRing=hoop(exitSpec.radius || .8,exitMaterial,exit,'Exit boundary');const exitGlow=halo(theme.edge,3.7,.04,exit);exitGlow.position.z=-.1;
+  let rescueJelly,cage,engine;
+  if(layout.mission?.type==='rescue'){
+    rescueJelly=jelly(exit,1.35);rescueJelly.group.position.set(0,1.4,-1.8);
+    cage=add(new THREE.Group(),'Jellyfish energy cage',exit);
+    for(let i=0;i<6;i++){const h=hoop(1.6,gold,cage,'Cage meridian');h.rotation.y=i/6*Math.PI;h.scale.y=1.6;h.position.set(0,.3,-1.8);}
+    for(let n=0;n<2;n++){const h=hoop(1.6,gold,cage,'Cage chain');h.rotation.x=Math.PI/2;h.position.set(0,n*1.6-.4,-1.8);}
   }
-  const fireflyMaterial = particleMaterial({ size: 4.1, opacity: .9, animated: true });
-  add(new THREE.Points(pointsGeometry(fireflyPoints, random, [0xf4d995, 0x6cddce, 0xb0b1f2]), fireflyMaterial), 'Fireflies above the moss');
-  animatedMaterials.push(fireflyMaterial);
+  if(layout.mission?.type==='escort'){
+    core=add(new THREE.Group(),'Carried astral core');const o=mesh(diamond,crystal,'Core prism',core);o.scale.setScalar(.30);hoop(.44,gold,core);coreGlow=halo(theme.edge,1.6,.35,core);
+    const linkGeometry=own(new THREE.BufferGeometry());linkGeometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array(9),3));coreLink=add(new THREE.Line(linkGeometry,basic(theme.edge,{transparent:true,opacity:.55})),'Core tether');
+  }
+  if(layout.mission?.type==='escort' || layout.mission?.type==='resonance'){
+    engine=add(new THREE.Group(),'Sleeping dream engine');engine.position.set(exitSpec.x,exitSpec.y+.7,-1.4);kit('DreamEngine',engine,{width:3.5,height:4.5,depth:1.5});for(let i=0;i<3;i++){const h=hoop(1+i*.35,gold,engine,'Engine orbit');h.rotation.set(i*.6,i*.7,0);}
+  }
+  const energyLinks=[];
+  const missionTargets=layout.mission?.targets || [],missionType=layout.mission?.type;
+  const energyMaterial=mat(new THREE.LineBasicMaterial({color:theme.edge,transparent:true,opacity:.40,depthWrite:false,blending:THREE.AdditiveBlending}));
+  for(let i=0;i<missionTargets.length;i++){
+    if(!['sequence','timed','resonance'].includes(missionType))break;
+    const from=missionTargets[i],to=missionType==='resonance'?exitSpec:missionTargets[i+1] || layout.mission.gate || exitSpec;
+    const geometry=own(new THREE.BufferGeometry());geometry.setAttribute('position',new THREE.BufferAttribute(new Float32Array([from.x,from.y,-.24,to.x,to.y,-.24]),3));
+    const line=add(new THREE.Line(geometry,energyMaterial),missionType==='resonance'?'Resonance engine charge beam':'Activated relay energy link');line.visible=false;energyLinks.push({line,index:i,to});
+  }
+  let engineCore=null,engineGlow=null;
+  if(engine){const energy=physical(theme.edge,{emissive:theme.edge,emissiveIntensity:.05,roughness:.16,metalness:.15});engineCore=mesh(sphere,energy,'Engine charge core',engine);engineCore.scale.setScalar(.44);engineGlow=halo(theme.edge,3.6,.02,engine);engineGlow.position.z=.25;}
+  function makeHazard(h){const g=add(new THREE.Group(),`${h.type} obstacle`),m=physical(0xc36a9c,{emissive:0xff4f9d,emissiveIntensity:.7,transparent:true,opacity:.75,roughness:.2});const r=h.radius || .5;const ring=hoop(r,m,g,'Obstacle contact boundary');const inner=hoop(r*.72,m,g);inner.rotation.x=.8;const glow=halo(0xff6099,r*3,.2,g);hazards.set(h.id,{group:g,material:m,ring,inner,glow,r});return hazards.get(h.id);}
+  (layout.hazards || []).forEach(makeHazard);
+  const currents=[];
+  for(const c of layout.currents || []){const g=add(new THREE.Group(),'Visible guiding current');g.position.set(c.x,c.y,-.25);for(let j=0;j<3;j++){const h=hoop(Math.min(c.width,c.height)*.32,dimBasic,g);h.position.set(0,(j-1)*c.height*.24,0);h.scale.y=.38;}currents.push({group:g,source:c});}
 
-  const jellyCap = new THREE.SphereGeometry(1, 16, 10, 0, TAU, 0, Math.PI / 2);
-  const jellyMaterial = standard(0x8ed3e0, { transparent: true, opacity: .18, depthWrite: false,
-    emissive: 0x436fa1, emissiveIntensity: .8, side: THREE.DoubleSide });
-  const jellyThread = new THREE.LineBasicMaterial({ color: 0x8dcde0, transparent: true, opacity: .35, depthWrite: false, fog: false });
-  for (let i = 0; i < (coarse ? 2 : 3); i++) {
-    const jelly = add(new THREE.Group(), 'Drifting cloud jellyfish');
-    const origin = new THREE.Vector3(5 + i * 16, 7 + i % 2 * 4, -11 - i * 3);
-    jelly.position.copy(origin);
-    jelly.scale.setScalar(.65 + i * .22);
-    const bell = add(new THREE.Mesh(jellyCap, jellyMaterial), 'Translucent bell', jelly);
-    bell.scale.y = .5;
-    const lip = add(new THREE.Mesh(new THREE.TorusGeometry(.97, .015, 4, 32), basic(0x94d4e3,
-      { transparent: true, opacity: .56, depthWrite: false })), 'Luminous bell rim', jelly);
-    lip.rotation.x = Math.PI / 2;
-    for (let j = 0; j < 6; j++) {
-      const a = j / 6 * TAU, thread = [];
-      for (let k = 0; k <= 14; k++) {
-        const t = k / 14;
-        thread.push(new THREE.Vector3(Math.cos(a) * (.65 - t * .22) + Math.sin(t * 7 + a) * .16,
-          -t * (1.2 + j % 3 * .24), Math.sin(a) * .60));
-      }
-      add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(thread), jellyThread), 'Silken cloud tentacle', jelly);
+  const trajectoryGeometry=own(new THREE.BufferGeometry());const trajectoryPositions=new Float32Array(180*3);trajectoryGeometry.setAttribute('position',new THREE.BufferAttribute(trajectoryPositions,3));trajectoryGeometry.setDrawRange(0,0);
+  const trajectoryPoints=add(new THREE.Points(trajectoryGeometry,mat(new THREE.PointsMaterial({color:0xffe6a6,size:.065,sizeAttenuation:true,transparent:true,opacity:.9,depthWrite:false}))), 'Actual flight prediction');
+  const landingMarker=hoop(.22,basic(0xffe7a3),group,'Predicted landing');landingMarker.rotation.x=Math.PI/2;landingMarker.visible=false;
+  const burstCount=coarse?120:220,burstParticles=Array.from({length:burstCount},()=>({life:0,max:1,x:0,y:0,z:0,vx:0,vy:0,vz:0}));let burstCursor=0;
+  const burstGeo=own(pointsGeometry(burstParticles.map(()=>({x:0,y:0,z:0})),random,[theme.edge,theme.accent,0xffdea0],true));burstGeo.attributes.life.array.fill(0);const burstMat=mat(particleMaterial({size:4.5,opacity:1}));add(new THREE.Points(burstGeo,burstMat),'Contact and victory particles');
+  function burst({x=0,y=0,type='hit',status,id}){
+    const target=id?targets.get(id):null;
+    if(type==='target' && status && status!=='activated'){if(target)target.rejectUntil=timeUniform.value+.65;return;}
+    if(type==='target' && target){if(timeUniform.value-(target.lastBurst ?? -10)<.05)return;target.lastBurst=timeUniform.value;}
+    for(let i=0;i<(type==='complete'?60:24);i++){const p=burstParticles[burstCursor++%burstCount],a=random()*TAU,s=1+random()*3;p.x=x;p.y=y;p.z=.2;p.vx=Math.cos(a)*s;p.vy=Math.sin(a)*s+1;p.vz=(random()-.5)*2;p.life=p.max=.6+random()*.65;}}
+  let lastComplete=false,disposed=false;
+  function update({time=0,dt=1/60,state={},trajectory=[],cameraTarget}={}){
+    if(disposed)return;timeUniform.value=time;fireflyMaterial.uniforms.time.value=time;burstMat.uniforms.time.value=time;
+    const focus=cameraTarget || state.position || {x:0,y:2};sky.position.x=focus.x;sky.position.y=focus.y+10;
+    key.position.set(focus.x-5,focus.y+9,8);key.target.position.set(focus.x+2,focus.y-1,-2);fill.position.set(focus.x+3,focus.y-1,3);
+    for(const p of state.islands || []){const visual=platforms.get(p.id);if(visual)visual.position.set(p.x,p.y,0);}
+    for(const a of platformAnimations){if(a.type==='jelly')a.organ.scale.set(.32,.19*(1+Math.sin(time*1.7)*.10),.32);else a.group.rotation.z=time*.12;}
+    for(const j of backgroundJellies){j.group.position.set(j.origin.x+Math.sin(time*.065+j.phase)*1.5,j.origin.y+Math.sin(time*.17+j.phase)*.65,j.origin.z);const pulse=1+Math.sin(time*.9+j.phase)*.05;j.organ.scale.set(.32*pulse,.19*pulse,.32*pulse);}
+    const mission=state.mission || {};
+    for(const [i,t] of (mission.targets || layout.mission?.targets || []).entries()){
+      const v=targets.get(t.id) || (makeTarget(t,i),targets.get(t.id));v.group.position.set(t.x,t.y,.18);
+      const done=!!t.completed,active=!done&&(layout.mission?.type!=='sequence'||t.next);
+      if(done&&!v.done)burst({x:t.x,y:t.y,type:'target',id:t.id,status:'activated'});v.done=done;
+      v.material.color.setHex(done?0x7bdfb1:active?theme.edge:0x68627c);v.material.emissiveIntensity=done?.13:active?.65:.06;
+      v.glow.material.opacity=done?.05:active?.17+Math.sin(time*2.8)*.045:.035;v.outer.rotation.z=time*(active?.24:.05);v.inner.rotation.y=Math.sin(time*.8+i)*.22;v.group.scale.setScalar(done?.78:1);
+      const rejected=time<(v.rejectUntil || 0);v.outer.scale.setScalar(v.r*(rejected?1+Math.sin(time*22)*.055:1));
+      if(rejected){v.material.color.setHex(0xffb45a);v.material.emissive.setHex(0xffa83f);v.material.emissiveIntensity=.8;v.glow.material.opacity=.19;}else v.material.emissive.setHex(theme.edge);
+      if(layout.mission?.type==='rescue'){const lock=v.group.getObjectByName('Jelly cage lock');const shackle=v.group.children.find(o=>o.name==='Luminous hoop');if(lock){lock.rotation.z=done?.7:0;lock.position.x=done?.13:0;}if(shackle){shackle.rotation.z=done?-.9:0;shackle.position.x=done?-.13:0;}}
     }
-    jellyfish.push({ group: jelly, origin, phase: random() * TAU });
+    for(const link of energyLinks){const ts=mission.targets || [],from=ts[link.index];link.line.visible=!!from?.completed;if(from){const to=missionType==='resonance'?exitSpec:ts[link.index+1] || link.to;link.line.geometry.attributes.position.array.set([from.x,from.y,-.24,to.x,to.y,-.24]);link.line.geometry.attributes.position.needsUpdate=true;}}
+    if(gate)gate.visible=!mission.gateOpen;
+    const waiting=(mission.targets || []).find(t=>!t.completed);
+    chargeRing.visible=layout.mission?.type==='timed' && mission.remainingTime!=null && !!waiting;
+    if(chargeRing.visible){chargeRing.position.set(waiting.x,waiting.y,.2);chargeRing.scale.setScalar((waiting.radius || .6)*1.28);chargeRing.geometry.setDrawRange(0,Math.max(2,Math.floor(81*mission.remainingTime/(layout.mission.timeLimit || 30))));}
+    const exitOpen=!!state.exit?.open;exitMaterial.emissiveIntensity=exitOpen?.85:.07;exitMaterial.color.setHex(exitOpen?theme.edge:0x625771);exitGlow.material.opacity=exitOpen?.26:.025;exitRing.rotation.z=time*.12;
+    if(cage){cage.visible=!exitOpen;const broken=(mission.targets || []).filter(t=>t.completed).length;cage.children.forEach((bar,i)=>{bar.visible=i<6?i%3>=broken:i-5>=broken;});}if(rescueJelly&&exitOpen)rescueJelly.group.position.y=1.4+Math.sin(time*.5)*.25;
+    if(core){const c=mission.core;core.visible=!!c;if(c){core.position.set(c.x,c.y,.35);core.rotation.y=time*.8;core.rotation.z=Math.sin(time)*.15;if(coreGlow)coreGlow.material.opacity=c.carried?.24:.40+Math.sin(time*3)*.10;
+      if(coreLink){coreLink.visible=!!c.carried;if(c.carried){const from=state.position || c;coreLink.geometry.attributes.position.array.set([from.x,from.y,.25,(from.x+c.x)*.5,(from.y+c.y)*.5-.12,.3,c.x,c.y,.35]);coreLink.geometry.attributes.position.needsUpdate=true;}}}else if(coreLink)coreLink.visible=false;}
+    if(engine){engine.rotation.y=Math.sin(time*.14)*.15;if(exitOpen)engine.rotation.z=time*.09;const charged=(mission.targets || []).filter(t=>t.completed).length/Math.max(1,missionTargets.length);if(engineCore)engineCore.material.emissiveIntensity=.08+charged*1.1;if(engineGlow)engineGlow.material.opacity=.025+charged*.24;}
+    for(const h of state.hazards || []){const v=hazards.get(h.id) || makeHazard(h);v.group.position.set(h.x,h.y,.1);const active=!!h.active,warning=Number(h.warning || h.warn || 0);v.material.emissiveIntensity=active?1.2:warning?.45:.06;v.material.opacity=active?.85:warning?.55:.16;v.material.color.setHex(active?0xff579b:warning?0xffd190:0x759bbb);v.glow.material.opacity=active?.24:warning?.14:.025;v.ring.rotation.z=time*(active?1.5:.3);v.inner.rotation.y=time*.8;}
+    for(const c of currents)c.group.rotation.z=(c.source.ax||0)>.1?-Math.PI/2:(c.source.ax||0)<-.1?Math.PI/2:0;
+    let count=0;for(let i=0;i<trajectory.length&&count<180;i+=2){const p=trajectory[i];trajectoryPositions.set([p.x,p.y,.55],count++*3);}trajectoryGeometry.setDrawRange(0,count);trajectoryGeometry.attributes.position.needsUpdate=true;
+    landingMarker.visible=false;if(trajectory.length){const end=trajectory.at(-1),actual=state.islands || layout.islands;const p=actual.find(p=>Math.abs(end.x-p.x)<=p.radius+(layout.xRadius || .42)&&Math.abs(end.y-p.y-(layout.halfHeight || .55))<.07);if(p){landingMarker.visible=true;landingMarker.position.set(end.x,p.y+.025,.05);}}
+    if(state.completed&&!lastComplete)burst({x:state.position?.x || exitSpec.x,y:state.position?.y || exitSpec.y,type:'complete'});lastComplete=!!state.completed;
+    for(let i=0;i<burstCount;i++){const p=burstParticles[i];if(p.life>0){p.life=Math.max(0,p.life-dt);p.vy-=dt*2.8;p.x+=p.vx*dt;p.y+=p.vy*dt;p.z+=p.vz*dt;}burstGeo.attributes.position.array.set([p.x,p.y,p.z],i*3);burstGeo.attributes.life.array[i]=p.life/p.max;}burstGeo.attributes.position.needsUpdate=true;burstGeo.attributes.life.needsUpdate=true;
   }
-
-  const seedGeo = starGeometry();
-  const seedMaterial = standard(0xffebba, { emissive: 0xffb94d, emissiveIntensity: .75, metalness: .35, roughness: .27 });
-  const haloGeometry = new THREE.TorusGeometry(.38, .012, 4, 40);
-  const haloMaterial = basic(COLORS.gold, { transparent: true, opacity: .55, depthWrite: false });
-  const starData = GARDEN.stars || GARDEN.islands.slice(1).map(i => ({ id: i.id, x: i.x, y: i.y + .85 }));
-  for (const [i, star] of starData.entries()) {
-    const seed = add(new THREE.Group(), `Star seed ${star.id}`);
-    seed.position.set(star.x, star.y, .18);
-    const gem = add(new THREE.Mesh(seedGeo, seedMaterial), 'Golden star jewel', seed);
-    const halo = add(new THREE.Mesh(haloGeometry, haloMaterial), 'Orbiting star halo', seed);
-    halo.rotation.x = .2;
-    const light = makeGlow(COLORS.gold, 1.5, .4, seed, 'Warm seed light');
-    light.position.z = -.05;
-    const motePositions = [];
-    for (let j = 0; j < 12; j++) {
-      const a = j / 12 * TAU;
-      motePositions.push({ x: Math.cos(a) * .47, y: Math.sin(a) * .47, z: -.02 });
-    }
-    const motesMaterial = particleMaterial({ size: 2.8, opacity: .9 });
-    const motes = add(new THREE.Points(pointsGeometry(motePositions, random, [COLORS.gold]), motesMaterial), 'Star seed motes', seed);
-    animatedMaterials.push(motesMaterial);
-    seeds.push({ group: seed, gem, halo, motes, star, phase: i * .71 });
-  }
-
-  for (let i = 0; i < GARDEN.islands.length - 1; i++) {
-    const from = GARDEN.islands[i], to = GARDEN.islands[i + 1], dots = [];
-    for (let j = 0; j <= 17; j++) {
-      const t = j / 17;
-      dots.push({ x: THREE.MathUtils.lerp(from.x, to.x, t),
-        y: THREE.MathUtils.lerp(from.y, to.y, t) + 1.2 + Math.sin(t * Math.PI) * 1.0, z: -2.0 });
-    }
-    const material = particleMaterial({ size: 2.2, opacity: .33 });
-    add(new THREE.Points(pointsGeometry(dots, random, [COLORS.gold]), material), 'Guiding constellation arc');
-    guideArcs.push(material);
-    animatedMaterials.push(material);
-  }
-
-  const goal = add(new THREE.Group(), 'Destination constellation');
-  const finalIsland = GARDEN.islands[GARDEN.islands.length - 1];
-  goal.position.set(finalIsland.x, 12, -8);
-  const constellationShape = [[-2.2, -.45], [-1.45, .75], [-.58, .15], [0, 1.5],
-    [1.0, .38], [2.05, 1.05], [2.35, -.45], [.55, -1.15]];
-  const constellationNodes = [];
-  const goalNodeGeometry = new THREE.OctahedronGeometry(.105, 0);
-  for (let i = 0; i < starData.length; i++) {
-    const p = constellationShape[i % constellationShape.length];
-    const node = add(new THREE.Mesh(goalNodeGeometry, basic(0x6c617b)), 'Waiting constellation light', goal);
-    node.position.set(p[0], p[1], 0);
-    const glowNode = makeGlow(COLORS.gold, .72, .0, goal, 'Constellation aura');
-    glowNode.position.copy(node.position);
-    glowNode.position.z = -.02;
-    constellationNodes.push({ node, glow: glowNode, id: starData[i].id });
-  }
-  const constellationGeometry = new THREE.BufferGeometry();
-  constellationGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(starData.length * 6), 3).setUsage(THREE.DynamicDrawUsage));
-  constellationGeometry.setDrawRange(0, 0);
-  const constellationLines = add(new THREE.LineSegments(constellationGeometry,
-    new THREE.LineBasicMaterial({ color: 0xffdaa0, transparent: true, opacity: .8, depthWrite: false, fog: false })), 'Connected golden constellation', goal);
-  constellationLines.frustumCulled = false;
-  const goalGlow = makeGlow(0x9578df, 8, .1, goal, 'Destination nebula');
-  goalGlow.position.z = -.1;
-
-  const trajectoryCapacity = 120;
-  const trajectoryGeometry = pointsGeometry(Array.from({ length: trajectoryCapacity }, () => ({ x: 0, y: 0, z: .7 })), random, [0xffe8b0], true);
-  trajectoryGeometry.setDrawRange(0, 0);
-  const trajectoryMaterial = particleMaterial({ size: 4.4, opacity: .85 });
-  const trajectoryDots = add(new THREE.Points(trajectoryGeometry, trajectoryMaterial), 'Live jump trajectory');
-  trajectoryDots.frustumCulled = false;
-  animatedMaterials.push(trajectoryMaterial);
-  const landingMarker = add(new THREE.Group(), 'First landing marker');
-  const landingRing = add(new THREE.Mesh(new THREE.TorusGeometry(.35, .025, 5, 36), basic(0xffdf94,
-    { transparent: true, opacity: .85, depthWrite: false })), 'Landing halo', landingMarker);
-  landingRing.rotation.x = Math.PI / 2;
-  const innerLanding = add(new THREE.Mesh(new THREE.TorusGeometry(.22, .009, 4, 28), haloMaterial), 'Inner landing halo', landingMarker);
-  innerLanding.rotation.x = Math.PI / 2;
-  landingMarker.visible = false;
-
-  const capacity = coarse ? 160 : 300;
-  const particles = Array.from({ length: capacity }, () => ({ x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, life: 0, maxLife: 1, meteor: false }));
-  const burstGeometry = pointsGeometry(particles, random, [COLORS.gold], true);
-  burstGeometry.attributes.life.array.fill(0);
-  const burstMaterial = particleMaterial({ size: 5.0 });
-  const particleCloud = add(new THREE.Points(burstGeometry, burstMaterial), 'Pooled stardust bursts');
-  particleCloud.frustumCulled = false;
-  animatedMaterials.push(burstMaterial);
-  let nextParticle = 0;
-  const meteorGeometry = new THREE.BufferGeometry();
-  meteorGeometry.setAttribute('position', new THREE.BufferAttribute(new Float32Array(capacity * 6), 3).setUsage(THREE.DynamicDrawUsage));
-  meteorGeometry.setDrawRange(0, 0);
-  const meteorLines = add(new THREE.LineSegments(meteorGeometry,
-    new THREE.LineBasicMaterial({ color: 0xffdfac, transparent: true, opacity: .60, depthWrite: false, blending: THREE.AdditiveBlending, fog: false })), 'Victory meteor trails');
-  meteorLines.frustumCulled = false;
-
-  function emit(x, y, type, count, z = .45) {
-    for (let i = 0; i < count; i++) {
-      const index = nextParticle++ % capacity, p = particles[index], a = random() * TAU;
-      const speed = .6 + random() * 2.3;
-      p.x = x; p.y = y; p.z = z;
-      p.vx = Math.cos(a) * speed; p.vy = Math.sin(a) * speed + .7; p.vz = (random() - .5) * 1.1;
-      p.life = p.maxLife = .8 + random() * 1.2;
-      p.meteor = type === 'meteor';
-      if (p.meteor) { p.vx = -2.1 - random(); p.vy = -5.4 - random() * 2; p.vz = .2; p.life = p.maxLife = 2.5; }
-      const shade = type === 'checkpoint' ? 0x7effdc : i % 3 ? COLORS.gold : COLORS.pearl;
-      color.setHex(shade).toArray(burstGeometry.attributes.color.array, index * 3);
-    }
-    burstGeometry.attributes.color.needsUpdate = true;
-  }
-
-  function burst({ x = 0, y = 0, type = 'collect' } = {}) {
-    if (disposed) return;
-    emit(x, y, type, type === 'victory' ? (coarse ? 70 : 110) : type === 'checkpoint' ? 35 : 25);
-  }
-
-  function collectedIds(state) {
-    const ids = state?.stars || [];
-    if (ids instanceof Set) return ids;
-    return new Set(Array.isArray(ids) ? ids : Object.keys(ids).filter(id => ids[id]));
-  }
-
-  function update({ time = 0, dt = 0, state = {}, trajectory = [], cameraTarget } = {}) {
-    if (disposed) return;
-    const step = Math.min(Math.max(dt, 0), .05);
-    const position = state.position || state;
-    const playerX = Number.isFinite(position.x) ? position.x : 0;
-    const playerY = Number.isFinite(position.y) ? position.y : 1;
-    const targetX = Number.isFinite(cameraTarget?.x) ? cameraTarget.x : playerX + 2.5;
-    sky.position.x = targetX;
-    moon.position.x = 10.2 + targetX * .68;
-    moon.position.y = 9.2 + ((cameraTarget?.y ?? playerY + 1.45) - 2.8) * .18;
-    rings.rotation.z = -.27 + Math.sin(time * .045) * .05;
-    ringDust.material.opacity = .13 + Math.sin(time * .11) * .015;
-    for (const material of animatedMaterials) material.uniforms.time.value = time;
-    for (const jelly of jellyfish) {
-      jelly.group.position.x = jelly.origin.x + Math.sin(time * .055 + jelly.phase) * 3.8;
-      jelly.group.position.y = jelly.origin.y + Math.sin(time * .25 + jelly.phase) * .35;
-      jelly.group.rotation.z = Math.sin(time * .18 + jelly.phase) * .10;
-      jelly.group.scale.y = (.65 + jellyfish.indexOf(jelly) * .22) * (1 + Math.sin(time * 1.1 + jelly.phase) * .035);
-    }
-
-    const collected = collectedIds(state);
-    for (const seed of seeds) {
-      seed.group.visible = !collected.has(seed.star.id);
-      seed.group.position.y = seed.star.y + Math.sin(time * 1.5 + seed.phase) * .07;
-      seed.gem.rotation.y = Math.sin(time * .8 + seed.phase) * .34;
-      seed.gem.rotation.z = Math.sin(time * .7 + seed.phase) * .08;
-      seed.halo.rotation.y = time * .55 + seed.phase;
-      seed.motes.rotation.z = time * .22 + seed.phase;
-    }
-    let activeArc = GARDEN.islands.findIndex(i => i.id === state.checkpoint);
-    if (activeArc < 0) activeArc = Math.max(0, Math.min(guideArcs.length - 1, Math.floor(playerX / 5)));
-    guideArcs.forEach((material, i) => { material.uniforms.opacity.value = i === activeArc ? .60 : .17; });
-    let lineVertex = 0;
-    constellationNodes.forEach(({ node, glow: aura, id }, i) => {
-      const lit = collected.has(id);
-      node.material.color.setHex(lit ? COLORS.gold : 0x6c617b);
-      aura.material.opacity = lit ? .60 : .06;
-      node.scale.setScalar(lit ? 1.25 + Math.sin(time * 2 + i) * .12 : .75);
-      const previous = constellationNodes[(i + constellationNodes.length - 1) % constellationNodes.length];
-      if (lit && collected.has(previous.id)) {
-        previous.node.position.toArray(constellationGeometry.attributes.position.array, lineVertex++ * 3);
-        node.position.toArray(constellationGeometry.attributes.position.array, lineVertex++ * 3);
-      }
-    });
-    constellationGeometry.setDrawRange(0, lineVertex);
-    constellationGeometry.attributes.position.needsUpdate = true;
-    goalGlow.material.opacity = state.completed ? .24 + Math.sin(time * .8) * .035 : .1;
-    if (state.completed && !lastCompleted) {
-      victoryUntil = time + 8;
-      burst({ x: playerX, y: playerY + .7, type: 'victory' });
-    }
-    if (!state.completed && lastCompleted) victoryUntil = 0;
-    lastCompleted = !!state.completed;
-    if (time < victoryUntil) {
-      meteorBudget += step * (coarse ? 10 : 18);
-      while (meteorBudget >= 1) {
-        meteorBudget--;
-        emit(playerX - 8 + random() * 19, playerY + 9 + random() * 6, 'meteor', 1, -6 - random() * 6);
-      }
-    }
-
-    const path = Array.isArray(trajectory) ? trajectory : [];
-    const count = Math.min(path.length, trajectoryCapacity);
-    for (let i = 0; i < count; i++) {
-      const p = path[Math.round(i * (path.length - 1) / Math.max(1, count - 1))];
-      trajectoryGeometry.attributes.position.array.set([p.x, p.y, .68], i * 3);
-      trajectoryGeometry.attributes.life.array[i] = .45 + .55 * (1 - i / Math.max(1, count));
-    }
-    trajectoryGeometry.setDrawRange(0, count);
-    trajectoryGeometry.attributes.position.needsUpdate = true;
-    trajectoryGeometry.attributes.life.needsUpdate = true;
-    landingMarker.visible = false;
-    if (count > 1) {
-      const end = path.find(p => p.landing || p.landed) || path[path.length - 1];
-      const island = GARDEN.islands.find(i => Math.abs(end.x - i.x) <= i.radius + GARDEN.xRadius
-        && Math.abs(end.y - i.y - GARDEN.halfHeight) < .04);
-      if (island) {
-        landingMarker.visible = true;
-        landingMarker.position.set(end.x, island.y + .055, .08);
-        landingMarker.scale.setScalar(1 + Math.sin(time * 5) * .07);
-      }
-    }
-
-    let trailVertex = 0;
-    for (let i = 0; i < capacity; i++) {
-      const p = particles[i];
-      p.life = Math.max(0, p.life - step);
-      if (p.life > 0) {
-        p.x += p.vx * step; p.y += p.vy * step; p.z += p.vz * step;
-        if (!p.meteor) p.vy -= .7 * step;
-        burstGeometry.attributes.position.array.set([p.x, p.y, p.z], i * 3);
-        if (p.meteor) {
-          meteorGeometry.attributes.position.array.set([p.x, p.y, p.z,
-            p.x - p.vx * .16, p.y - p.vy * .16, p.z - p.vz * .16], trailVertex * 3);
-          trailVertex += 2;
-        }
-      }
-      burstGeometry.attributes.life.array[i] = p.life / p.maxLife;
-    }
-    burstGeometry.attributes.position.needsUpdate = true;
-    burstGeometry.attributes.life.needsUpdate = true;
-    meteorGeometry.attributes.position.needsUpdate = true;
-    meteorGeometry.setDrawRange(0, trailVertex);
-  }
-
-  function dispose() {
-    if (disposed) return;
-    disposed = true;
-    const geometries = new Set(), materials = new Set();
-    group.traverse(object => {
-      if (object.geometry) geometries.add(object.geometry);
-      if (object.material) for (const material of [].concat(object.material)) materials.add(material);
-    });
-    for (const geometry of geometries) geometry.dispose();
-    for (const material of materials) material.dispose();
-    glow.dispose();
-    cloudMap.dispose();
-    group.removeFromParent();
-  }
-
-  group.userData.islandCount = GARDEN.islands.length;
-  group.userData.starIds = starData.map(star => star.id);
-  return { group, update, burst, dispose };
+  function dispose(){if(disposed)return;disposed=true;group.traverse(o=>{if(o.isInstancedMesh)o.dispose();if(o.shadow)o.shadow.dispose();if(o.geometry&&!sharedGeometries.has(o.geometry))geometries.add(o.geometry);if(o.material)for(const m of [].concat(o.material))materials.add(m);});for(const g of geometries)g.dispose();for(const m of materials)m.dispose();for(const t of textures)t.dispose();group.removeFromParent();}
+  group.userData.islandCount=platforms.size;group.userData.biome=layout.name;group.userData.assetKit=!!sourceKit;group.userData.missionType=layout.mission?.type;
+  return {group,update,burst,dispose};
 }

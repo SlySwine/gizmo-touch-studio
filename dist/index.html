@@ -12,25 +12,22 @@
 <main id="studio">
   <header class="masthead"><div class="brand"><h1>Gizmo</h1></div><div class="header-actions"><button id="play" class="play-button" type="button" aria-label="Play in the Starlight Garden" aria-pressed="false" disabled><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 5 11 7-11 7z"/><path d="M3 8v8"/></svg><span>Play</span></button><button class="reset sound-toggle" id="sound-toggle" type="button" title="Mute sound (M)" aria-label="Mute sound" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m11 5-5 4H3v6h3l5 4z"/><g class="sound-waves"><path d="M15 8a6 6 0 0 1 0 8m3-11a10 10 0 0 1 0 14"/></g><path class="sound-slash" d="m15 9 6 6m0-6-6 6"/></svg></button><button class="reset" id="reset" title="Reset Gizmo (R)" aria-label="Reset shape and fur"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 10a8 8 0 1 1 1 7M4 4v6h6"/></svg><span>Reset</span></button></div></header>
   <section class="stage" aria-label="Interactive Gizmo playground">
-    <canvas id="canvas" tabindex="0" aria-label="Gizmo. Poke, Pull, Brush, Turn, or Slap. Drag his hat or select Turn to rotate him. Keyboard: 1 to 5 selects a tool, Space pokes or slaps, arrows use the selected tool, R resets, M toggles sound."></canvas>
+    <canvas id="canvas" tabindex="0" aria-label="Gizmo. Poke, Slap, Pull, Brush, or Turn. Drag his hat or select Turn to rotate him. Keyboard: 1 to 5 selects a tool, Space pokes or slaps, arrows use the selected tool, R resets, M toggles sound."></canvas>
     <div id="loading" role="status"><span class="loading-mark"></span><p>Waking up Gizmo…</p></div>
     <div class="mood" id="mood" aria-live="polite">Perfectly unbothered.</div>
-    <section id="garden-hud" class="garden-hud" aria-label="Starlight Garden progress" hidden>
-      <p class="garden-eyebrow"><span></span> The Starlight Garden</p>
-      <h2 id="garden-heading">Wake the sleeping sky.</h2>
-      <p class="garden-objective">Gather eight lost lights. Bring the constellation home.</p>
-      <div class="garden-progress-row"><div id="garden-progress" aria-hidden="true"></div><output id="garden-count" aria-label="Starlight collected">0 / 8</output></div>
-      <div class="sanctuary"><span>Sanctuary</span><strong id="garden-sanctuary">The First Dream</strong><button id="garden-rescue" type="button" title="Return to your last safe island" aria-label="Return to sanctuary">↶</button></div>
+    <section id="garden-hud" class="garden-hud" aria-label="World and progress" hidden>
+      <select id="garden-level" aria-label="Choose world"></select>
+      <div class="garden-mission-row"><span id="garden-mission"></span><output id="garden-timer" hidden aria-label="Time remaining"></output><span id="garden-core" hidden aria-label="Dream core carried">◈</span></div>
+      <div class="garden-progress-row"><div id="garden-progress" aria-hidden="true"></div><output id="garden-count" aria-label="Mission progress">0 / 8</output></div>
     </section>
     <section id="garden-guide" class="garden-guide" hidden>
-      <p id="garden-help">Pull Gizmo back. Follow the arc. Release to fly.</p>
-      <p class="garden-keyboard">Arrows to aim <span>·</span> Space to launch <span>·</span> R to return</p>
-      <div id="garden-charge" class="garden-charge" hidden><i></i><span>0%</span></div>
+      <div id="garden-charge" class="garden-charge" hidden aria-label="Launch power"><i></i><span>0%</span></div>
     </section>
-    <section id="garden-victory" class="garden-victory" aria-label="Constellation restored" hidden>
-      <span class="victory-spark">✧</span><p class="garden-eyebrow">A little fluff. A lot of wonder.</p>
-      <h2>The sky remembers.</h2><p>Eight lost lights, one very brave little bean.<br>You brought the Starlight Garden back to life.</p>
-      <div><button id="garden-continue" type="button">Keep wandering</button><button id="garden-studio" type="button">Back to Studio</button></div><button id="garden-again" class="dream-again" type="button">Dream again ↗</button>
+    <section id="garden-victory" class="garden-victory" aria-label="World complete" hidden>
+      <span class="victory-spark" aria-hidden="true">✧</span>
+      <h2 id="garden-heading">World complete.</h2>
+      <div><button id="garden-next" type="button">Next world →</button><button id="garden-continue" type="button">Keep exploring</button></div>
+      <button id="garden-again" class="dream-again" type="button">Play again ↗</button>
     </section>
     <div id="cursor" aria-hidden="true"><i></i></div>
   </section>
@@ -45,10 +42,10 @@
     </div>
     <div class="control-row"><div class="tools" role="group" aria-label="Interaction tool">
       <button class="tool active" data-tool="poke" title="Press and hold to squish (1)" aria-pressed="true"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 21h8l3-8a2 2 0 0 0-3-2l-2 1V5a2 2 0 0 0-4 0v8l-2-2c-2-2-4 0-2 2l2 3z"/><path d="M5 5H3m5-3L7 1m10 2 1-2"/></svg><span>Poke</span></button>
-      <button class="tool" data-tool="pull" title="Drag and release to stretch (2)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l5 5m6 6 5 5M4 9V4h5m6 15h5v-5M9 9c3-2 8 3 6 6s-8-3-6-6z"/></svg><span>Pull</span></button>
-      <button class="tool" data-tool="brush" aria-controls="brush-settings" aria-expanded="false" title="Sweep to groom (3)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 3 6 6-9 9-6-6zM5 14l5 5m-7-3 5 5m-6-2 3 3"/></svg><span>Brush</span></button>
-      <button class="tool" data-tool="turn" aria-pressed="false" title="Drag to turn Gizmo (4)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c3-5 13-5 16 0M20 4v4h-4M20 16c-3 5-13 5-16 0M4 20v-4h4"/><ellipse cx="12" cy="12" rx="3" ry="8"/></svg><span>Turn</span></button>
-      <button class="tool" data-tool="slap" aria-pressed="false" aria-controls="slap-settings" aria-expanded="false" title="Tap Gizmo to slap (5)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8l4-7V7a1.5 1.5 0 0 0-3 0v5-8a1.5 1.5 0 0 0-3 0v7-9a1.5 1.5 0 0 0-3 0v9-7a1.5 1.5 0 0 0-3 0v10l-2-2c-2-2-4 0-2 2zM3 5l-1-2M5 2V1"/></svg><span>Slap</span></button>
+      <button class="tool" data-tool="slap" aria-pressed="false" aria-controls="slap-settings" aria-expanded="false" title="Tap Gizmo to slap (2)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M8 21h8l4-7V7a1.5 1.5 0 0 0-3 0v5-8a1.5 1.5 0 0 0-3 0v7-9a1.5 1.5 0 0 0-3 0v9-7a1.5 1.5 0 0 0-3 0v10l-2-2c-2-2-4 0-2 2zM3 5l-1-2M5 2V1"/></svg><span>Slap</span></button>
+      <button class="tool" data-tool="pull" title="Drag and release to stretch (3)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 4l5 5m6 6 5 5M4 9V4h5m6 15h5v-5M9 9c3-2 8 3 6 6s-8-3-6-6z"/></svg><span>Pull</span></button>
+      <button class="tool" data-tool="brush" aria-controls="brush-settings" aria-expanded="false" title="Sweep to groom (4)" aria-pressed="false"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m15 3 6 6-9 9-6-6zM5 14l5 5m-7-3 5 5m-6-2 3 3"/></svg><span>Brush</span></button>
+      <button class="tool" data-tool="turn" aria-pressed="false" title="Drag to turn Gizmo (5)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 8c3-5 13-5 16 0M20 4v4h-4M20 16c-3 5-13 5-16 0M4 20v-4h4"/><ellipse cx="12" cy="12" rx="3" ry="8"/></svg><span>Turn</span></button>
     </div></div>
 
   </footer>

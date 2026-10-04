@@ -1,4 +1,4 @@
-# Gizmo · Touch Studio & Starlight Garden
+# Gizmo · Touch Studio & Dream Realms
 
 [Live playground](https://slyswine.github.io/gizmo-touch-studio/) · [Deployment runs](https://github.com/SlySwine/gizmo-touch-studio/actions/workflows/pages.yml)
 
@@ -8,15 +8,29 @@ Three.js playground for Michael's actual Astra character. Static, self-contained
 python3 -m http.server 8764 --directory dist
 ```
 
-Open http://localhost:8764. Select Poke, Pull, Brush, Turn, or Slap; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Slap reveals a floating 10–100% power slider without resizing the character; tap Gizmo once for a broad ripple, a power-sensitive smack and a surprised “Oh!”. Reset clears deformation, grooming, and orientation and restores 55% slap power. Keyboard: 1/2/3/4/5 selects a tool, R resets, M toggles sound; focus the canvas and use Space to poke (or slap in Slap mode), or arrows to use the selected tool. The power slider keeps its native keyboard controls. System reduced-motion preference suppresses idle breathing.
+Open http://localhost:8764. Select Poke, Slap, Pull, Brush, or Turn; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Slap reveals a floating 10–100% power slider without resizing the character; tap Gizmo once for a broad ripple, a power-sensitive smack and a surprised “Oh!”. Reset clears deformation, grooming, and orientation and restores 55% slap power. Keyboard: 1/2/3/4/5 selects a tool, R resets, M toggles sound; focus the canvas and use Space to poke (or slap in Slap mode), or arrows to use the selected tool. The power slider keeps its native keyboard controls. System reduced-motion preference suppresses idle breathing.
 
-## Starlight Garden
+## Five dream realms
 
-Play opens the garden; Studio returns to the close-up grooming view. The same Gizmo mesh and grooming buffers remain alive in both views, so hair, expressions and tool settings carry across without a copy or reload. The garden pauses while in the studio. The two routes are `#studio` and `#garden`; the Back button follows them. Journey progress and grooming last for the current page session.
+Play enters the adventure; Studio returns to close-up grooming. Both views share one Gizmo mesh and live grooming buffers. Hair, expressions and tool settings carry across. Each realm has its own remembered mission and a different challenge:
 
-Gather eight lost starlights across floating sanctuaries to awaken the final constellation. Pull back and release to launch in the opposite direction: the dotted trajectory uses the same physics as the actual flight. Slap power changes flight distance; pokes give smaller directional hops. Brush and Turn hold Gizmo gently in place until release. Each safe landing updates the sanctuary. Falling or pressing R returns there without losing light or grooming; the studio's Reset retains its original full-reset behavior. In Pull mode, arrows adjust the aim and Space launches. The victory card allows continued wandering, a new journey, or a return to the studio.
+| Realm | Mission | Challenge |
+| --- | --- | --- |
+| Starlight Garden | Wake the dream engine | Charge resonators by passing through them with momentum |
+| Luminous Tides | Free the jellyfish guardian | Break its locks with a forceful impact or strong slap-assisted collision |
+| Prism Vault | Restore the light path | Activate marked mirror relays in order, including a return journey |
+| Stormbloom | Stabilize the storm | Energize stabilizers within the time window while navigating hazards |
+| Astral Clockwork | Deliver the dream core | Carry fragile cargo through the mechanisms and recover it after a hit |
 
-The game rules live in `garden-model.js`, without Three.js or browser dependencies. `garden-world.js` owns the procedural scenery, collectibles and effects. `garden.js` joins the journey, camera and interface; the studio continues to own the one character. Run `node scripts/test-garden.mjs` to check launches, collision, progression, cancellation, preview accuracy and recovery.
+Moving platforms, currents, pulsing hazards and physical gates participate in the simulation. Progress opens the exit; collecting decorative stars is not a completion condition. Launch previews use the movement simulation. Recovery returns Gizmo to the last safe landing; the escort core must be picked up again when dropped. Timer and mechanism time pause with the realm, including held aiming.
+
+The compact interface keeps the world picker, mission progress, timer when relevant, shared tools and Gizmo’s comments. Tool order is Poke, Slap, Pull, Brush, Turn in both views; shortcuts1–5 follow that order. Pull back and release to launch opposite the pull. Slap power changes distance and impact; pokes give smaller hops. Brush and Turn hold Gizmo until release. Arrow keys aim in Pull mode, Space launches, Escape cancels, and R returns to the last safe landing. Studio Reset clears the groom as before.
+
+Each realm remembers its progress while visiting another realm or the studio. Restart affects only the current realm. All realms are available to explore immediately; completion is tracked separately. Routes are `#studio` and `#garden/<realm-slug>`; `#garden` opens the first realm. Browser Back follows view and realm changes. Progress and hairstyles last for the current page session.
+
+`garden-model.js` contains simulation and progression without browser dependencies. `garden-world.js` owns scenery, mechanisms and effects. `garden.js` joins the model, camera and interface. `garden-assets.js` loads the shared Blender dream kit and HDR environment once; `garden-renderer.js` applies restrained HDR bloom only in the game. Run `node scripts/test-garden.mjs` for mission, collision, recovery and trajectory checks.
+
+The magical asset kit is reproducible with `tools/build_dream_assets.py` in a fresh Blender session. It contains a medusa bell with radial anatomy, layered lotus petals, beveled crystals, mirror mechanisms, celestial rings, gates and a suspended dream engine. It never opens the original Astra scene. Asset provenance is in [ASSET-CREDITS.md](ASSET-CREDITS.md). Surfaces use real-time physical materials and atmospheric lighting; these remain browser rendering approximations, not offline path tracing.
 
 ## Voice and hair light
 

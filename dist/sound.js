@@ -5,11 +5,11 @@ export function createGizmoSound() {
   const MAX_VOICES = 8;
   const AudioContextClass = globalThis.AudioContext || globalThis.webkitAudioContext;
   const voices = new Set();
-  const events = { unlock: 0, poke: 0, slap: 0, wonder: 0, star: 0, land: 0, launch: 0, rescue: 0, complete: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
+  const events = { unlock: 0, poke: 0, slap: 0, wonder: 0, star: 0, land: 0, launch: 0, rescue: 0, target: 0, gate: 0, hazard: 0, core: 0, timeout: 0, complete: 0, begin: 0, update: 0, end: 0, release: 0, giggle: 0, reset: 0, stop: 0, dropped: 0, errors: 0 };
   let enabled = true, available = !!AudioContextClass, disposed = false;
   let context = null, master = null, limiter = null, noise = null, voiceWave = null, purrWave = null, active = null;
   let resumePromise = null, lastPoke = -Infinity, lastSlap = -Infinity;
-  const wonderCooldown = { star: .07, land: .1, launch: .12, rescue: .45, complete: .8 };
+  const wonderCooldown = { star: .07, land: .1, launch: .12, rescue: .45, target: .08, gate: .4, hazard: .3, core: .4, timeout: .8, complete: .8 };
   const lastWonder = Object.create(null);
   try { enabled = globalThis.localStorage?.getItem(STORAGE_KEY) !== 'false'; } catch (_) { /* Storage may be private. */ }
 
@@ -339,6 +339,47 @@ export function createGizmoSound() {
       const energy = Math.sqrt(force);
       if (kind === 'star') {
         chime(voice, now, [783.99, 987.77, 1174.66], .1, .17, .36, .085 * energy);
+      } else if (kind === 'target') {
+        if (force >= .999) {
+          // A completed charge/lock breaks into a small crystalline flourish.
+          chime(voice, now, [1174.66, 1567.98, 2093], .055, .09, .24, .075);
+        } else {
+          // Progress raises the resonance without creating an ambient loop.
+          const pitch = 392 * Math.pow(2, force * .8);
+          const body = sourceFor(voice, 'sine', pitch, 2400);
+          envelope(body, now, .095 * energy, .022, .34);
+          const overtone = sourceFor(voice, 'sine', pitch * 2.002, 3200);
+          envelope(overtone, now, .032 * energy, .018, .26);
+        }
+      } else if (kind === 'gate') {
+        for (const [pitch, amplitude] of [[196, .072], [294, .039]]) {
+          const layer = sourceFor(voice, 'sine', pitch, 2000);
+          layer.source.frequency.exponentialRampToValueAtTime(pitch * (1.65 + force * .35), now + .36);
+          envelope(layer, now, amplitude * energy, .15, .66);
+        }
+      } else if (kind === 'hazard') {
+        // A low padded warning, with no crack, hiss or alarm-like repetition.
+        const body = sourceFor(voice, 'purr', 96, 380);
+        body.source.frequency.exponentialRampToValueAtTime(58, now + .19);
+        envelope(body, now, .13 * energy, .012, .27);
+        const weight = sourceFor(voice, 'sine', 145, 500);
+        weight.source.frequency.exponentialRampToValueAtTime(82, now + .17);
+        envelope(weight, now, .045 * energy, .018, .23);
+      } else if (kind === 'core') {
+        // Two warm pulses from the same two bounded sources.
+        for (const [type, pitch, amplitude] of [['purr', 146.83, .075], ['sine', 220, .032]]) {
+          const layer = sourceFor(voice, type, pitch, 650), gain = layer.gain.gain;
+          const peak = amplitude * energy;
+          gain.setValueAtTime(0, now);
+          gain.linearRampToValueAtTime(peak, now + .045);
+          gain.linearRampToValueAtTime(peak * .22, now + .17);
+          gain.linearRampToValueAtTime(peak * .78, now + .27);
+          gain.exponentialRampToValueAtTime(.0001, now + .62);
+          gain.linearRampToValueAtTime(0, now + .65);
+          start(layer, now, .67);
+        }
+      } else if (kind === 'timeout') {
+        chime(voice, now, [329.63, 246.94], .2, .32, .45, .055 * energy);
       } else if (kind === 'complete') {
         chime(voice, now, [523.25, 659.25, 783.99, 1046.50], .16, .29, .5, .11 * energy);
       } else if (kind === 'rescue') {

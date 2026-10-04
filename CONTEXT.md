@@ -1,17 +1,25 @@
-# Gizmo's Starlight Garden
+# Gizmo's Dream Realms
 
-Gizmo can be groomed in his studio and taken into a floating garden to restore its sleeping constellation.
+Gizmo can be groomed in his studio and taken into five magical realms to repair a fractured dream.
 
 ## Language
 
 **Studio**: Gizmo's close-up space for shaping and grooming his fur.
 
-**Garden**: The playable world of floating islands. Visiting the studio pauses the garden without losing progress.
+**Realm**: A playable place with its own mission, mechanisms, movement and remembered journey. Visiting another realm or the studio pauses it.
 
-**Starlight**: A lost light Gizmo gathers by touching it. Each recovered light adds a star to the sleeping constellation.
+**Mission**: The work needed to awaken a realm's exit. Resonance, rescue, mirror sequence, storm stabilization and core escort are distinct missions.
 
-**Sanctuary**: The last island Gizmo landed on safely. Falling returns him there without losing starlight or his hairstyle.
+**Resonator**: A ring charged by passing through it with enough momentum.
 
-**Constellation**: The garden's final destination, awakened when all of its lost starlight has been returned.
+**Guardian lock**: A restraint broken by a forceful collision or strong slap-assisted impact.
 
-**Hairstyle**: Gizmo's current brushed fur, shared between the studio and garden.
+**Mirror relay**: A mechanism activated in a marked sequence to route a beam.
+
+**Stabilizer**: A storm mechanism that must be energized within the mission's time window.
+
+**Dream core**: Fragile cargo that follows Gizmo until a hazard dislodges it. It must be recovered and delivered.
+
+**Sanctuary**: The last safe landing. Recovery preserves the journey and hairstyle.
+
+**Hairstyle**: Gizmo's current brushed fur, shared across the studio and every realm.
