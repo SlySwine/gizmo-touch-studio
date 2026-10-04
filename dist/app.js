@@ -1,9 +1,15 @@
 import * as THREE from 'three';
 import { GLTFLoader } from './vendor/GLTFLoader.js';
+import { createGizmoSound } from './sound.js';
 
 const canvas=document.querySelector('#canvas'), stage=document.querySelector('.stage');
 const loading=document.querySelector('#loading'), mood=document.querySelector('#mood');
 const cursor=document.querySelector('#cursor');
+const sound=createGizmoSound(),soundButton=document.querySelector('#sound-toggle');
+function syncSoundButton(){const available=sound.state.available,on=sound.enabled&&available;soundButton.disabled=!available;soundButton.setAttribute('aria-pressed',String(on));soundButton.setAttribute('aria-label',!available?'Sound unavailable':on?'Mute sound':'Enable sound');soundButton.title=!available?'Sound unavailable in this browser':on?'Mute sound (M)':'Enable sound (M)';}
+function unlockSound(e){if(e?.isTrusted)sound.unlock().then(syncSoundButton);}
+function toggleSound(e){sound.setEnabled(!sound.enabled);if(sound.enabled)unlockSound(e);syncSoundButton();}
+soundButton.addEventListener('click',toggleSound);syncSoundButton();
 const reduced=matchMedia('(prefers-reduced-motion: reduce)');
 let calm=reduced.matches, tool='poke', active=null, loaded=false, time=0, lastTime=0;
 let rig,body,base,fur,furGeo,furRoots,furNormals,furGroom,furSeeds,bodyGeometry;
@@ -49,6 +55,9 @@ const key=new THREE.DirectionalLight(0xffd5e4,1.2);key.position.set(-4,6,6);scen
 const blueBack=new THREE.PointLight(0x155aff,38,14,2);blueBack.position.set(-2.4,1.8,-2.2);scene.add(blueBack);
 const violetBack=new THREE.PointLight(0x7007bf,38,14,2);violetBack.position.set(2.4,1.8,-2.2);scene.add(violetBack);
 const fill=new THREE.DirectionalLight(0xff83bc,.25);fill.position.set(-4,1,0);scene.add(fill);
+const hairLight=new THREE.SpotLight(0xcbd5ff,45,14,.62,.6,2);
+hairLight.position.set(.4,6.2,-2);hairLight.target.position.set(0,2.2,0);scene.add(hairLight,hairLight.target);
+const hairLightDirection=new THREE.Vector3().subVectors(hairLight.target.position,hairLight.position).normalize();
 
 // Soft contact shadow; the character and all visible fibers are live geometry.
 const shadowCanvas=document.createElement('canvas');shadowCanvas.width=128;shadowCanvas.height=128;
@@ -101,10 +110,11 @@ function makeFur(){
   furGeo.setAttribute('position',new THREE.Float32BufferAttribute(blade,3));
   furGeo.setAttribute('root',new THREE.InstancedBufferAttribute(furRoots,3));furGeo.setAttribute('hairNormal',new THREE.InstancedBufferAttribute(furNormals,3));
   furGeo.setAttribute('groom',new THREE.InstancedBufferAttribute(furGroom,3).setUsage(THREE.DynamicDrawUsage));furGeo.setAttribute('seed',new THREE.InstancedBufferAttribute(furSeeds,1));furGeo.instanceCount=furCount;
-  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},blueBackPosition:{value:blueBack.position},violetBackPosition:{value:violetBack.position}},vertexShader:`
+  const mat=new THREE.ShaderMaterial({side:THREE.DoubleSide,uniforms:{centers:{value:uCenter},displacements:{value:uDisplace},velocities:{value:nodeVelocities},radii:{value:uRadius},localCamera:{value:localCamera},hairWind:{value:hairWind},eyeFeel:{value:eyeFeel},hatOffset:{value:HAT_OFFSET},furNormalMatrix:{value:furNormalMatrix},blueBackPosition:{value:blueBack.position},violetBackPosition:{value:violetBack.position},hairLightPosition:{value:hairLight.position},hairLightDirection:{value:hairLightDirection},hairLightColor:{value:hairLight.color},hairCone:{value:new THREE.Vector2(Math.cos(hairLight.angle),Math.cos(hairLight.angle*(1-hairLight.penumbra)))}},vertexShader:`
     attribute vec3 root;attribute vec3 hairNormal;attribute vec3 groom;attribute float seed;
     uniform vec3 centers[6];uniform vec3 displacements[6];uniform vec3 velocities[6];uniform float radii[6];uniform vec3 localCamera;uniform vec3 hairWind;uniform vec4 eyeFeel;uniform vec3 hatOffset;
     uniform mat3 furNormalMatrix;uniform vec3 blueBackPosition;uniform vec3 violetBackPosition;
+    uniform vec3 hairLightPosition;uniform vec3 hairLightDirection;uniform vec3 hairLightColor;uniform vec2 hairCone;
     varying vec3 vColor;varying float vT;
     vec3 displace(vec3 p){vec3 result=p;for(int i=0;i<6;i++){vec3 d=p-centers[i];result+=displacements[i]*exp(-dot(d,d)/(2.0*radii[i]*radii[i]));}return result;}
     float backlight(vec3 lightPosition,vec3 worldP,vec3 N,vec3 V,float edge){
@@ -146,17 +156,27 @@ function makeFur(){
       vec3 rimColor=vec3(.004,.055,1.0)*blueRim+vec3(.16,.002,.52)*violetRim;
       // Saturated blue/violet transmission catches the tips above the dimmer front light.
       vColor=mix(vColor,rimColor/max(rimSum,.001),clamp(rimSum*4.5,0.0,.96))+rimColor*.65;
+      // A separate overhead/back light follows the actual bent and groomed fiber direction.
+      vec3 fiberT=n*len*(1.0-laid)+2.0*t*(curl+gravity*len*.35+(groom+inertia)*trim);
+      vec3 T=normalize(mat3(modelMatrix)*fiberT);
+      vec3 hairD=hairLightPosition-worldP;vec3 hairL=normalize(hairD);vec3 H=normalize(hairL+V);
+      float strandHighlight=pow(max(0.0,1.0-dot(T,H)*dot(T,H)),12.0);
+      float spotCone=smoothstep(hairCone.x,hairCone.y,dot(-hairL,hairLightDirection));
+      float facing=smoothstep(-.10,.65,dot(litNormal,hairL));
+      float tipLight=smoothstep(.20,.95,t)*facing*(1.0-underHat*.92);
+      float hairCatch=tipLight*(.20+.80*strandHighlight)*spotCone/(1.0+.05*dot(hairD,hairD));
+      vColor+=hairLightColor*hairCatch*2.2;
       gl_Position=projectionMatrix*modelViewMatrix*vec4(displacedP,1.0);
     }`,fragmentShader:`varying vec3 vColor;varying float vT;void main(){gl_FragColor=vec4(vColor,1.0);#include <tonemapping_fragment>\n#include <colorspace_fragment>}`.replace(';#include',';\n#include')});
   fur=new THREE.Mesh(furGeo,mat);fur.frustumCulled=false;rig.add(fur);
 }
 
 const toolNames=['poke','pull','brush','turn'];
-function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, or turn.');endGesture();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':'Perfectly unbothered.');idleReturn=time+4;}
+function setTool(value){if(!toolNames.includes(value))throw new Error('Choose poke, pull, brush, or turn.');endGesture();sound.stop();tool=value;document.querySelectorAll('[data-tool]').forEach(b=>{const on=b.dataset.tool===tool;b.classList.toggle('active',on);b.setAttribute('aria-pressed',String(on));});cursor.className=tool;stage.classList.toggle('turn',tool==='turn');setMood(tool==='brush'?'A little grooming goes a long way.':tool==='turn'?'Every side is my good side.':'Perfectly unbothered.');idleReturn=time+4;}
 
 document.querySelectorAll('[data-tool]').forEach(b=>b.addEventListener('click',()=>setTool(b.dataset.tool)));
-function reset(){endGesture();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;}groomed=0;response=0;responseTarget=0;brushJoy=0;reaction.at=reaction.lastPoke=-100;reaction.pokes=0;reaction.kind='idle';reaction.gaze.set(0,0);expression.surprise=expression.annoyance=expression.blink=expression.pleased=0;expression.label='sleepy';eyeFeel.set(0,0,0,0);maxDeform=0;if(rig){rig.position.set(0,-1.8,0);rig.rotation.set(0,0,0);rig.scale.set(1,1,1);pivot.rotation.set(0,0,0);}setMood('Fresh fluff. Fresh start.');idleReturn=time+3;}
-document.querySelector('#reset').addEventListener('click',reset);
+function reset(){endGesture();sound.stop();orbit.yaw=orbit.pitch=orbit.vx=orbit.vy=0;wobble.value.set(0,0,0);wobble.velocity.set(0,0,0);hairWind.set(0,0,0);pendingBrush=null;dirtyBody=true;for(const n of nodes){n.value.set(0,0,0);n.velocity.set(0,0,0);n.target.set(0,0,0);n.center.set(0,-100,0);}if(furGroom){furGroom.fill(0);furGeo.attributes.groom.needsUpdate=true;}groomed=0;response=0;responseTarget=0;brushJoy=0;reaction.at=reaction.lastPoke=-100;reaction.pokes=0;reaction.kind='idle';reaction.gaze.set(0,0);expression.surprise=expression.annoyance=expression.blink=expression.pleased=0;expression.label='sleepy';eyeFeel.set(0,0,0,0);maxDeform=0;if(rig){rig.position.set(0,-1.8,0);rig.rotation.set(0,0,0);rig.scale.set(1,1,1);pivot.rotation.set(0,0,0);}setMood('Fresh fluff. Fresh start.');idleReturn=time+3;}
+document.querySelector('#reset').addEventListener('click',e=>{unlockSound(e);reset();if(e.isTrusted)sound.reset();});
 
 function ray(e){const r=canvas.getBoundingClientRect();pointer.set((e.clientX-r.left)/r.width*2-1,-(e.clientY-r.top)/r.height*2+1);raycaster.setFromCamera(pointer,camera);cursor.style.left=(e.clientX-r.left)+'px';cursor.style.top=(e.clientY-r.top)+'px';}
 function pick(e){if(!loaded)return null;ray(e);scene.updateMatrixWorld(true);return raycaster.intersectObjects(pickable,false)[0]||null;}
@@ -172,10 +192,12 @@ function startGesture(e){
   if(!turning&&!picked)return;
   const hit=turning?null:contact(e,picked);
   e.preventDefault();canvas.focus({preventScroll:true});canvas.setPointerCapture(e.pointerId);gestureCount++;orbit.vx=orbit.vy=0;
-  if(turning){active={id:e.pointerId,tool:'turn',x:e.clientX,y:e.clientY,eventTime:e.timeStamp};stage.classList.add('turn','contact');setMood('Every side is my good side.');return;}
+  unlockSound(e);
+  if(turning){active={id:e.pointerId,tool:'turn',x:e.clientX,y:e.clientY,eventTime:e.timeStamp,soundSpeed:0,soundPan:pointer.x};sound.begin('turn',{pan:pointer.x});stage.classList.add('turn','contact');setMood('Every side is my good side.');return;}
   const n=tool==='brush'?null:newNode(hit.point,tool==='pull'?1.03:.86);
   hitPlane.setFromNormalAndCoplanarPoint(camera.getWorldDirection(new THREE.Vector3()),hit.world);
-  active={id:e.pointerId,node:n,start:hit.world.clone(),last:hit.point.clone(),tool,point:hit.point.clone(),startTime:time,eventTime:e.timeStamp,dragVelocity:new THREE.Vector3()};stage.classList.add('contact');cursor.style.opacity='1';
+  active={id:e.pointerId,node:n,start:hit.world.clone(),last:hit.point.clone(),tool,point:hit.point.clone(),startTime:time,eventTime:e.timeStamp,dragVelocity:new THREE.Vector3(),soundSpeed:0,soundPan:pointer.x};stage.classList.add('contact');cursor.style.opacity='1';
+  if(tool==='poke')sound.poke({strength:.6+Math.min(reaction.pokes,4)*.07,pan:pointer.x});else sound.begin(tool,{pan:pointer.x});
   if(tool==='poke'){react('poke',hit.point);n.target.copy(hit.normal).multiplyScalar(-.78);n.velocity.copy(hit.normal).multiplyScalar(-5.2);wobble.velocity.set(hit.normal.z*.7,0,-hit.point.x*.35);responseTarget=.96;setMood(reaction.pokes>=4?'Personal space. Ever heard of it?':reaction.pokes>=2?'You again.': 'Hey! I was napping.');}
   if(tool==='pull'){react('pull',hit.point);responseTarget=.75;setMood('A little stretch…');}
   if(tool==='brush'){react('brush',hit.point);brushJoy=1;setMood('That’s the spot.');}
@@ -184,23 +206,27 @@ function moveGesture(e){
   if(!loaded)return;ray(e);
   if(!active){hover(e);return;}
   if(e.pointerId!==active.id)return;e.preventDefault();
+  active.soundPan=pointer.x;
+  if(active.tool!=='poke'&&sound.state.activeKind!==active.tool)sound.begin(active.tool,{pan:pointer.x});
   if(active.tool==='turn'){
     const dx=e.clientX-active.x,dy=e.clientY-active.y,dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
     orbit.yaw+=dx*.009;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+dy*.006,-.6,.6);
     orbit.vx=THREE.MathUtils.clamp(dx*.009/dt,-6,6);orbit.vy=THREE.MathUtils.clamp(dy*.006/dt,-2,2);
+    active.soundSpeed=Math.min(1,Math.hypot(dx,dy)/(dt*1400));
     active.x=e.clientX;active.y=e.clientY;active.eventTime=e.timeStamp;return;
   }
   if(active.tool==='pull'){
     const p=raycaster.ray.intersectPlane(hitPlane,temp);
     if(p){const localNow=body.worldToLocal(p.clone()),localStart=body.worldToLocal(active.start.clone());const target=localNow.sub(localStart).clampLength(0,2.65);const dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);
       active.dragVelocity.copy(target).sub(active.node.target).divideScalar(dt).clampLength(0,10);active.eventTime=e.timeStamp;active.node.target.copy(target);
+      active.soundSpeed=Math.min(1,active.dragVelocity.length()/6);
       active.node.radius=1.03+target.length()*.36;uRadius[nodes.indexOf(active.node)]=active.node.radius;
       responseTarget=Math.min(1,target.length()*.55+.3);setMood(target.length()>1.8?'I am not a slingshot.':target.length()>1.1?'Okay, that’s quite a stretch.':'A little stretch…');
     }
   }
   if(active.tool==='brush'){
-    const hit=contact(e);
-    if(hit){if(active.last){const delta=hit.point.clone().sub(active.last).clampLength(0,.32);if(delta.length()>.001){pendingBrush={point:hit.point,delta:pendingBrush?pendingBrush.delta.add(delta).clampLength(0,.45):delta};brushJoy=1;}}active.last=hit.point.clone();}else{active.last=null;pendingBrush=null;}
+    const hit=contact(e),dt=Math.max(.008,(e.timeStamp-active.eventTime)/1000);active.eventTime=e.timeStamp;
+    if(hit){if(active.last){const delta=hit.point.clone().sub(active.last).clampLength(0,.32);if(delta.length()>.001){active.soundSpeed=Math.min(1,delta.length()/(dt*3.2));pendingBrush={point:hit.point,delta:pendingBrush?pendingBrush.delta.add(delta).clampLength(0,.45):delta};brushJoy=1;}}active.last=hit.point.clone();}else{active.last=null;pendingBrush=null;active.soundSpeed=0;}
   }
 }
 
@@ -208,6 +234,12 @@ function groom(point,delta){let affected=0;const len=delta.length();if(len<.0001
 function endGesture(e){
   if(e&&active&&e.pointerId!==undefined&&e.pointerId!==active.id)return;
   if(active){const gesture=active,id=gesture.id;active=null;
+    if(e?.type==='pointerup'){
+      const firstTouch=sound.state.contextState==='uninitialized';unlockSound(e);
+      if(firstTouch&&gesture.tool==='poke')sound.poke({strength:.65,pan:gesture.soundPan});
+      if(firstTouch&&gesture.tool==='pull'){sound.begin('pull',{pan:gesture.soundPan});sound.update({tension:gesture.node.value.length()/2.65,speed:0,pan:gesture.soundPan});}
+    }
+    if(e?.type==='pointerup')sound.end({release:true,tension:gesture.node?gesture.node.value.length()/2.65:0});else sound.stop();
     if(gesture.node){gesture.node.target.set(0,0,0);if(gesture.tool==='pull'&&e?.type==='pointerup'&&time-gesture.startTime>.05){if(e.timeStamp-gesture.eventTime<120)gesture.node.velocity.addScaledVector(gesture.dragVelocity,.45).clampLength(0,12);wobble.velocity.z+=THREE.MathUtils.clamp(-gesture.node.value.x*.6,-1.3,1.3);wobble.velocity.x+=gesture.node.value.z*.4;}}
     if(pendingBrush&&gesture.tool==='brush'){groom(pendingBrush.point,pendingBrush.delta);pendingBrush=null;}
     if(canvas.hasPointerCapture(id))canvas.releasePointerCapture(id);responseTarget=0;idleReturn=time+3.5;
@@ -218,7 +250,29 @@ function endGesture(e){
 }
 
 canvas.addEventListener('pointerdown',startGesture);canvas.addEventListener('pointermove',moveGesture);canvas.addEventListener('pointerup',endGesture);canvas.addEventListener('pointercancel',endGesture);canvas.addEventListener('lostpointercapture',endGesture);canvas.addEventListener('pointerleave',()=>{stage.classList.remove('hat-hover');if(!active)cursor.style.opacity='0';});window.addEventListener('blur',()=>endGesture());document.addEventListener('visibilitychange',()=>{if(document.hidden)endGesture();});canvas.addEventListener('contextmenu',e=>e.preventDefault());
-window.addEventListener('keydown',e=>{if(e.altKey||e.ctrlKey||e.metaKey)return;const values={'1':'poke','2':'pull','3':'brush','4':'turn'};if(values[e.key])setTool(values[e.key]);if(e.key.toLowerCase()==='r')reset();if(document.activeElement!==canvas||!loaded)return;if(e.key===' '){e.preventDefault();react('poke',new THREE.Vector3(0,1.6,1.25));setMood(reaction.pokes>=3?'I’m counting those.':'Hey! I was napping.');const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-7.5;responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;}if(e.key.startsWith('Arrow')){e.preventDefault();const d=new THREE.Vector3(e.key==='ArrowLeft'?-.5:e.key==='ArrowRight'?.5:0,e.key==='ArrowUp'?.5:e.key==='ArrowDown'?-.5:0,0);if(tool==='turn'){orbit.yaw+=d.x*.65;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+d.y*.35,-.6,.6);}else if(tool==='brush'){react('brush',new THREE.Vector3(0,1.6,1.3));groom(new THREE.Vector3(0,1.6,1.3),d);brushJoy=1;}else{react(tool,new THREE.Vector3(0,1.6,1.2));const n=newNode(new THREE.Vector3(0,1.6,1.2),.8);n.velocity.copy(d).multiplyScalar(9);gestureCount++;}}});
+window.addEventListener('keydown',e=>{
+  if(e.altKey||e.ctrlKey||e.metaKey)return;
+  if(e.key.toLowerCase()==='m'&&!e.repeat){e.preventDefault();toggleSound(e);return;}
+  const values={'1':'poke','2':'pull','3':'brush','4':'turn'};
+  if(values[e.key])setTool(values[e.key]);
+  if(e.key.toLowerCase()==='r'&&!e.repeat){unlockSound(e);reset();if(e.isTrusted)sound.reset();}
+  if(document.activeElement!==canvas||!loaded)return;
+  if(e.key===' '){
+    e.preventDefault();unlockSound(e);sound.poke({strength:.7});
+    react('poke',new THREE.Vector3(0,1.6,1.25));setMood(reaction.pokes>=3?'I’m counting those.':'Hey! I was napping.');
+    const n=newNode(new THREE.Vector3(0,1.6,1.25),.75);n.velocity.z=-7.5;responseTarget=.6;setTimeout(()=>responseTarget=0,220);gestureCount++;
+  }
+  if(e.key.startsWith('Arrow')){
+    e.preventDefault();unlockSound(e);
+    const d=new THREE.Vector3(e.key==='ArrowLeft'?-.5:e.key==='ArrowRight'?.5:0,e.key==='ArrowUp'?.5:e.key==='ArrowDown'?-.5:0,0);
+    if(!active){if(tool==='poke')sound.poke({strength:.6});else{if(sound.state.activeKind!==tool)sound.begin(tool);sound.update({tension:.35,speed:.6,pan:0});}}
+    if(tool==='turn'){orbit.yaw+=d.x*.65;orbit.pitch=THREE.MathUtils.clamp(orbit.pitch+d.y*.35,-.6,.6);}
+    else if(tool==='brush'){react('brush',new THREE.Vector3(0,1.6,1.3));groom(new THREE.Vector3(0,1.6,1.3),d);brushJoy=1;}
+    else{react(tool,new THREE.Vector3(0,1.6,1.2));const n=newNode(new THREE.Vector3(0,1.6,1.2),.8);n.velocity.copy(d).multiplyScalar(9);gestureCount++;}
+  }
+});
+window.addEventListener('keyup',e=>{if(e.key.startsWith('Arrow')&&!active)sound.end({release:true,tension:.35});});
+window.addEventListener('pagehide',e=>{if(e.persisted)sound.stop();else sound.dispose();});
 
 function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/1000||.016,.05);lastTime=now;time+=dt;frame++;
   if(loaded){let moving=false,max=0;
@@ -249,6 +303,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
     rig.scale.set(1+Math.min(tension,.9)*.025,1-Math.min(tension,.9)*.045+(calm?0:Math.sin(time*1.8)*.004),1+Math.min(tension,.9)*.015);
     rig.updateWorldMatrix(true,true);localCamera.copy(camera.position);rig.worldToLocal(localCamera);furNormalMatrix.getNormalMatrix(fur.matrixWorld);
     hairWind.set(-orbit.vx*.012,orbit.vy*.01,-wobble.velocity.x*.025);
+    if(active&&active.tool!=='poke'){sound.update({tension:active.node?active.node.value.length()/2.65:0,speed:active.soundSpeed,pan:active.soundPan});active.soundSpeed*=Math.exp(-12*dt);}
     if(!active&&time>idleReturn&&brushJoy<.1&&mood.textContent!=='Perfectly unbothered.')setMood('Perfectly unbothered.');
   }
   renderer.render(scene,camera);
@@ -256,7 +311,7 @@ function tick(now){requestAnimationFrame(tick);const dt=Math.min((now-lastTime)/
 requestAnimationFrame(tick);
 
 // Readable state for interaction QA; no tracking or network requests.
-window.gizmo={get state(){return {loaded,tool,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
+window.gizmo={get state(){return {loaded,tool,audio:sound.state,active:!!active,activeTool:active?.tool||null,hatHovered:stage.classList.contains('hat-hover'),orientation:pivot?pivot.rotation.toArray().slice(0,3):[0,0,0],gestureCount,groomed,maxDeform,furCount,calm,yaw:orbit.yaw,pitch:orbit.pitch,turnSpeed:Math.hypot(orbit.vx,orbit.vy),wobble:wobble.value.length(),physicsSteps,expression:{...expression},pokeCount:reaction.pokes,springPositions:nodes.map(n=>n.value.toArray()),comments:mood.textContent,finite:!bodyGeometry||bodyGeometry.attributes.position.array.every(Number.isFinite),size:{width:canvas.clientWidth,height:canvas.clientHeight}};},setTool,reset};
 const mc=document.modelContext;
 if(mc?.registerTool){const lifecycle=new AbortController();const register=t=>{try{Promise.resolve(mc.registerTool(t,{signal:lifecycle.signal})).catch(()=>{});}catch{}};
 register({name:'select_gizmo_tool',title:'Select Gizmo tool',description:'Select Poke, Pull, Brush, or Turn in the visible Gizmo playground.',inputSchema:{type:'object',properties:{tool:{type:'string',enum:['poke','pull','brush','turn']}},required:['tool'],additionalProperties:false},annotations:{readOnlyHint:false,untrustedContentHint:false},execute(input){if(!input||Object.keys(input).length!==1||!['poke','pull','brush','turn'].includes(input.tool))throw new Error('Invalid tool');setTool(input.tool);return {tool};}});

@@ -2,13 +2,19 @@
 
 [Live playground](https://slyswine.github.io/gizmo-touch-studio/) · [Deployment runs](https://github.com/SlySwine/gizmo-touch-studio/actions/workflows/pages.yml)
 
-Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency, analytics, or storage. Serve `dist` over HTTP; no build is required.
+Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency or analytics. Only the sound on/off preference is stored locally. Serve `dist` over HTTP; no build is required.
 
 ```sh
 python3 -m http.server 8764 --directory dist
 ```
 
-Open http://localhost:8764. Select Poke, Pull, Brush, or Turn; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Reset clears deformation, grooming, and orientation. Keyboard: 1/2/3/4 selects a tool, R resets; focus the canvas and use Space to poke or arrows to pull/brush/turn. System reduced-motion preference suppresses idle breathing.
+Open http://localhost:8764. Select Poke, Pull, Brush, or Turn; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Reset clears deformation, grooming, and orientation. Keyboard: 1/2/3/4 selects a tool, R resets, M toggles sound; focus the canvas and use Space to poke or arrows to pull/brush/turn. System reduced-motion preference suppresses idle breathing.
+
+## Voice and hair light
+
+A separate pale-lavender spotlight sits above and behind Gizmo. Its matching shader contribution catches the actual bent and groomed strand directions, adding fine highlights while retaining the dim front and electric-blue/deep-violet rims. The browser hair lighting approximates fiber scattering without shadow-map sampling.
+
+Gizmo’s nonverbal voice is synthesized locally with Web Audio: short grunts, a rising pull groan, a release sigh, soft grooming purrs and occasional three-part giggles. No recorded voice, audio download, music or idle playback is used. Sound starts on a user interaction. The speaker button or M mutes it and remembers that choice. Release, cancellation, blur and hidden-page events fade the sounds; a watchdog and bounded voice count prevent stuck tones. Browsers without Web Audio retain the playground.
 
 ## GitHub deployment
 
