@@ -48,4 +48,8 @@ Detailed reports, routes, failed driver attempts and additional screenshots rema
 
 Physical phones, older hardware, Safari, Firefox, gamepads and screen-reader-only completion remain unverified. Touch results are Chrome emulation. Headless audio lifecycle was tested; sound was not assessed by listening. The game uses the actual Astra mesh with a lower-cost fur approximation, not the Blender render's full hair system. The new static Blender world is 9,525,132 bytes, 273,484 triangles and 21 material batches before dynamic props.
 
-The next useful acceptance test is an uncoached session with the intended players to assess clue clarity and pacing. This remains a draft preview. The live Studio and production deployment are unchanged until approval and merge.
+The next useful acceptance test is an uncoached session with the intended players to assess clue clarity and pacing. Production is published through an approved merge to main and its successful GitHub Pages workflow.
+
+## Release smoke check
+
+Pre-merge review found Studio’s number-key shortcuts still used the old tool order. They now derive from the same ordered tool list as the toolbar. Fourteen isolated Chrome smoke checks pass for keys 1–5, native slider focus, Studio-to-game entry, movement, restart confirmation, returning to Studio, and touch finale/replay. The deployment is separately checked against the committed static files before reporting it live.

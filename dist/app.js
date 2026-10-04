@@ -357,8 +357,7 @@ window.addEventListener('keydown',e=>{
   if(neonOpen)return;
   if(e.altKey||e.ctrlKey||e.metaKey||usesNativeKeys(e))return;
   if(e.key.toLowerCase()==='m'&&!e.repeat){e.preventDefault();toggleSound(e);return;}
-  const values={'1':'poke','2':'pull','3':'brush','4':'turn','5':'slap'};
-  if(values[e.key])setTool(values[e.key]);
+  if(/^[1-5]$/.test(e.key))setTool(toolNames[Number(e.key)-1]);
   if(e.key.toLowerCase()==='r'&&!e.repeat){unlockSound(e);reset();if(e.isTrusted)sound.reset();}
   if(document.activeElement!==canvas||!loaded)return;
   if(e.key===' '){

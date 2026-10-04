@@ -10,7 +10,7 @@ python3 -m http.server 8764 --directory dist
 
 Open http://localhost:8764. Select Poke, Slap, Pull, Brush, or Turn; press/drag directly on Gizmo. Drag his hat in any tool, or select Turn, to rotate him. Hovering the visible hat shows a hand cursor. Background dragging in other tools and right-click dragging do nothing. Rotation stops on release. Slap reveals a floating 10–100% power slider without resizing the character; tap Gizmo once for a broad ripple, a power-sensitive smack and a surprised “Oh!”. Reset clears deformation, grooming, and orientation and restores 55% slap power. Keyboard: 1/2/3/4/5 selects a tool, R resets, M toggles sound; focus the canvas and use Space to poke (or slap in Slap mode), or arrows to use the selected tool. The power slider keeps its native keyboard controls. System reduced-motion preference suppresses idle breathing.
 
-## Neon Wilds preview
+## Neon Wilds
 
 Play opens a new free-roaming 3D sanctuary, built in Blender. Three connected districts can be explored in any order: lead wandering jellyfish home, route a crystal beam through two mirrors, and carry matching power cells to a pulse machine. Restoring them opens the Aurora Spire. Six optional hidden echoes unlock companion wisps and slightly higher hops. Completed districts unlock a jellyfish ride, a solid prism crossing and a terrace lift. Exploring all three paths opens moonpetals; return to bloom the Atrium garden. Four optional airborne crystal chimes reward precise bouncing with a Moontrail. Luma demonstrates nearby gestures visually. There is no life counter or combat penalty.
 
@@ -24,7 +24,7 @@ The reproducible Blender source generator is `tools/build_neon_world.py`. Run it
 
 Validation: `node scripts/validate-site.mjs` and `node --test scripts/test-neon-*.mjs`. Browser journey testing uses actual controls; model tests exercise collision, every quest order, all secrets, saves and failure recovery. Emulated touch and desktop Chrome are covered; physical phone performance needs device testing.
 
-The rejected floating-platform prototype is preserved on `codex/starlight-garden` at `18f079829f3977f32aeb7502a1f412fda649bbc7` ([archived PR #2](https://github.com/SlySwine/gizmo-touch-studio/pull/2)). This replacement is on `codex/neon-wilds`; it is not deployed until approved and merged into main.
+The rejected floating-platform prototype is preserved on `codex/starlight-garden` at `18f079829f3977f32aeb7502a1f412fda649bbc7` ([archived PR #2](https://github.com/SlySwine/gizmo-touch-studio/pull/2)). The replacement is maintained through pull requests to `main`; approved merges validate and deploy through GitHub Pages.
 
 ## Voice and hair light
 
