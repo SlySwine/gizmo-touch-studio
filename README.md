@@ -2,7 +2,7 @@
 
 [Live playground](https://slyswine.github.io/gizmo-touch-studio/) · [Deployment runs](https://github.com/SlySwine/gizmo-touch-studio/actions/workflows/pages.yml)
 
-Three.js playground for Michael's actual Astra character. Static, self-contained, with no CDN dependency or analytics. The sound preference and Neon Wilds journey are stored locally. Serve `dist` over HTTP; no build is required.
+Three.js playground for Michael's actual Astra character. All game code and assets are served locally; the optional Cloudflare Web Analytics beacon is the only external script. The sound preference and Neon Wilds journey are stored locally. Serve `dist` over HTTP; no build is required.
 
 ```sh
 python3 -m http.server 8764 --directory dist
@@ -33,6 +33,10 @@ A separate pale-lavender spotlight sits above and behind Gizmo, softened to 75% 
 Gizmo’s nonverbal voice is synthesized locally with Web Audio: short grunts, a slap followed by a surprised “Oh!”, a rising pull groan, a release sigh, warm, gently pulsing grooming purrs, and occasional three-part giggles on repeated pokes. Brushing produces only the pleased hum, with no noise layer or giggles. No recorded voice, audio download, music or idle playback is used. Sound starts on a user interaction. The speaker button or M mutes it and remembers that choice. The grooming hum briefly lingers after a stroke, then gently fades. Cancellation, mute, blur and hidden-page events promptly fade the sounds; a watchdog and bounded voice count prevent stuck tones. Browsers without Web Audio retain the playground.
 
 ## GitHub deployment
+
+Free aggregate Cloudflare Web Analytics is installed only in the outer `dist/index.html`, using Gizmo's separate `slyswine.github.io` site entry. The game iframe (`play.html`) has no beacon or custom event tracking. `spa: false` disables automatic SPA measurement, so switching between Studio and Play does not create extra pageviews. No player identifiers, saves, grooming data, or gameplay events are sent by application code. Cloudflare describes its analytics as cookie-free and without fingerprinting; blocked analytics does not prevent play. Direct standalone visits to `play.html` are not measured. Dashboard visits/pageviews are aggregate traffic metrics, not a count of unique people, and collection can be delayed or blocked.
+
+References: [Cloudflare privacy](https://www.cloudflare.com/web-analytics/), [SPA measurement](https://developers.cloudflare.com/web-analytics/get-started/web-analytics-spa/).
 
 This public repository is the source for Gizmo’s public GitHub Pages deployment. Pushes to `main` validate the JavaScript, linked assets and GLB model, then publish the `dist/` directory. Pull requests run validation without publishing. The `github-pages` environment permits the `main` branch only. The Actions workflow uses GitHub’s short-lived deployment identity; no personal token or additional deployment secret belongs in this repository.
 

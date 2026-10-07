@@ -30,7 +30,7 @@ A local versioned save retains progress, carried cells, followers, secrets, visi
 
 Desktop Chrome and Chrome touch emulation are the local browser targets. Real mobile devices, Safari, gamepads and screen-reader-only completion have not been verified. Camera overhead changes are intentionally immediate when necessary to keep Gizmo visible. This is a compact, forgiving exploration puzzle, with no combat, inventory economy or multiplayer. It is not an assertion of exhaustive testing or commercial-game depth.
 
-No analytics, remote save service, CDN dependencies or paid assets are used. The public production site only updates after an approved merge to main.
+The outer Studio page uses free aggregate Cloudflare Web Analytics with SPA measurement disabled; the game iframe has no analytics or custom event tracking. Player saves stay local. Game code and assets have no CDN dependency, remote save service or paid assets. The public production site only updates after an approved merge to main.
 
 ## Playtest note
 
